@@ -225,8 +225,6 @@
   <header><h3>Nguồn dữ liệu &amp; đồng bộ</h3><button class="btn" id="closeDrawer" type="button">Đóng</button></header>
   <div class="body">
     <div class="fld"><span>Ví theo dõi</span><div id="vaultList"></div></div>
-    <div class="fld"><span>Etherscan API key</span><input type="password" id="apikey" placeholder="Cần cho Polygon / chain khác">
-      <div class="help">BSC tải qua NodeReal, không cần key. Key chỉ lưu trên máy này và chỉ gửi tới api.etherscan.io.</div></div>
     <div class="fld"><span>Chain cần tải</span><div class="chains" id="chainBoxes"></div></div>
     <div class="row"><button class="btn primary" id="btnFetch" type="button">Tải dữ liệu on-chain</button>
       <button class="btn" id="btnClear" type="button">Xoá dữ liệu</button></div>
@@ -271,7 +269,7 @@ const VERIFIED = {
   "56:0x55d398326f99059ff775485246999027b3197955": "USDT",   // Tether USD (BSC-USD) trên BNB Chain
   "137:0xc2132d05d31c914a87c6611c10748aeb04b58e8f": "USDT0", // USDT0 trên Polygon PoS
 };
-// BSC lấy qua endpoint công khai của NodeReal (miễn phí, không cần key) vì Etherscan free không hỗ trợ BSC
+// BSC lấy qua NodeReal (URL trong config.local.js) vì Etherscan free không hỗ trợ BSC
 const NODEREAL_BSC = window.NODEREAL_BSC_URL || ""; // đặt trong config.local.js (./set-key.sh), không commit
 const isVerified = t => t.kind === "token" && !!VERIFIED[t.chain + ":" + t.contract];
 
@@ -393,8 +391,7 @@ function log(msg, err) {
   if (err) line.className = "err"; line.textContent = msg; el.appendChild(line);
 }
 async function runFetch() {
-  const key = $("apikey").value.trim();
-  if (key) store.set("apikey", key);
+  const key = window.ETHERSCAN_API_KEY || "";
   const chains = CHAINS.filter(c => $("ch_" + c.id).checked);
   $("status").innerHTML = ""; $("btnFetch").disabled = true;
   await fetchPrices();
@@ -409,7 +406,7 @@ async function runFetch() {
         $("status").lastChild.textContent = `${tag} (NodeReal): ${rows.length} transfer, trong đó ${rows.filter(isVerified).length} là USDT chuẩn`;
         continue;
       }
-      if (!key) throw new Error("cần Etherscan API key cho chain này");
+      if (!key) throw new Error("cần Etherscan API key trong config.local.js (chạy ./set-key.sh)");
       const tok = await esAll(c.id, "tokentx", addr, key);
       const nat = await esAll(c.id, "txlist", addr, key);
       const internal = await esAll(c.id, "txlistinternal", addr, key);
@@ -794,7 +791,7 @@ $("vaultList").innerHTML = "Theo dõi: " + VAULTS.map(v => `<b>${v.name}</b> <co
 $("vaultSeg").innerHTML = VAULTS.map(v => `<button data-v="${v.id}">${v.name}</button>`).join("") + `<button data-v="all">Tất cả</button>`;
 $("csvVault").innerHTML = VAULTS.map(v => `<option value="${v.id}">CSV thuộc vault: ${v.name}</option>`).join("");
 if (state.vault !== "all" && !vaultById[state.vault]) state.vault = 1;
-$("apikey").value = window.ETHERSCAN_API_KEY || store.get("apikey", "");
+localStorage.removeItem("bp_apikey"); // key cũ từng lưu từ ô nhập — nay chỉ đọc từ config.local.js
 $("chainBoxes").innerHTML = CHAINS.map(c => `<label><input type="checkbox" id="ch_${c.id}" ${c.on ? "checked" : ""}><i class="swatch" style="background:${chainColor(c.id)}"></i>${c.name}</label>`).join("");
 $("csvChain").innerHTML = CHAINS.map(c => `<option value="${c.id}">CSV thuộc chain: ${c.name}</option>`).join("");
 $("labels").value = Object.entries(state.labels).map(([a, l]) => `${a},${l}`).join("\n");

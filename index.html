@@ -78,6 +78,13 @@ code { font: 11px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-2)
 .meta-chip:empty::after { content: "Chưa có dữ liệu"; }
 .theme-btn { font: inherit; font-size: 12px; color: var(--ink-2); background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
 .theme-btn:hover { background: var(--sunken); }
+.reload-btn { width: 32px; height: 32px; padding: 0; display: inline-grid; place-items: center; color: var(--ink-2); }
+.reload-btn svg { width: 16px; height: 16px; }
+.reload-btn:hover { color: var(--s1); }
+.reload-btn:disabled { cursor: progress; opacity: .7; }
+.reload-btn.spinning svg { animation: bp-spin .9s linear infinite; }
+@keyframes bp-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .reload-btn.spinning svg { animation-duration: 2.4s; } }
 
 /* ---- filter row ---- */
 .filters { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--border); border-radius: 14px;
@@ -196,8 +203,11 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
     </div>
     <div class="top-right">
       <span class="meta-chip" id="dataInfo"></span>
-      <button class="theme-btn" id="goData" type="button">↻ Đồng bộ dữ liệu</button>
+      <button class="theme-btn" id="goData" type="button">Đồng bộ dữ liệu</button>
       <button class="theme-btn" id="theme" type="button">◐ Giao diện</button>
+      <button class="theme-btn reload-btn" id="reload" type="button" title="Tải giao dịch mới nhất" aria-label="Tải giao dịch mới nhất">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
     </div>
   </div>
 
@@ -279,9 +289,8 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
   <div class="grid">
     <div class="card c7">
       <header><div><h2>Đồng bộ dữ liệu on-chain</h2></div></header>
-      <p class="sub">BSC qua NodeReal (không cần key) · Polygon và chain khác qua Etherscan API V2 · key chỉ lưu trên máy này</p>
+      <p class="sub">BSC qua NodeReal · Polygon và chain khác qua Etherscan API V2 · key đọc từ config.local.js trên máy này, không hiển thị trên trang</p>
       <div class="fld"><span class="flabel">Ví theo dõi</span><div id="vaultList"></div></div>
-      <div class="fld"><span class="flabel">Etherscan API key</span><input type="password" id="apikey" placeholder="Cần cho Polygon / chain khác"></div>
       <div class="fld"><span class="flabel">Chain</span><div class="chains" id="chainBoxes"></div></div>
       <div class="fld row">
         <button class="tbtn primary" id="btnFetch" type="button">Tải dữ liệu on-chain</button>
@@ -344,7 +353,7 @@ const VERIFIED = {
   "8217:0xd077a400968890eacc75cdc901f0356c943e4fdb": "USDT", // Tether USD trên Kaia (theo sổ đối soát)
   "9745:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb": "USDT0", // USDT0 trên Plasma (theo sổ đối soát)
 };
-// BSC lấy qua endpoint công khai của NodeReal (miễn phí, không cần key) vì Etherscan free không hỗ trợ BSC
+// BSC lấy qua NodeReal (URL trong config.local.js) vì Etherscan free không hỗ trợ BSC
 const NODEREAL_BSC = window.NODEREAL_BSC_URL || ""; // đặt trong config.local.js (./set-key.sh), không commit
 const isVerified = t => t.kind === "token" && !!VERIFIED[t.chain + ":" + t.contract];
 
@@ -481,10 +490,11 @@ function log(msg, err) {
   if (err) line.className = "err"; line.textContent = msg; el.appendChild(line);
 }
 async function runFetch() {
-  const key = $("apikey").value.trim();
-  if (key) store.set("apikey", key);
+  const key = window.ETHERSCAN_API_KEY || "";
   const chains = CHAINS.filter(c => c.api !== false && $("ch_" + c.id).checked);
+  if ($("btnFetch").disabled) return; // đang tải dở thì bỏ qua
   $("status").innerHTML = ""; $("btnFetch").disabled = true;
+  $("reload").disabled = true; $("reload").classList.add("spinning");
   await fetchPrices();
   let all = state.txs.filter(t => !chains.some(c => c.id === t.chain)); // giữ dữ liệu của chain không tải lại
   for (const v of VAULTS) for (const c of chains) {
@@ -497,7 +507,7 @@ async function runFetch() {
         $("status").lastChild.textContent = `${tag} (NodeReal): ${rows.length} transfer, trong đó ${rows.filter(isVerified).length} là USDT chuẩn`;
         continue;
       }
-      if (!key) throw new Error("cần Etherscan API key cho chain này");
+      if (!key) throw new Error("cần Etherscan API key trong config.local.js (chạy ./set-key.sh)");
       const tok = await esAll(c.id, "tokentx", addr, key);
       const nat = await esAll(c.id, "txlist", addr, key);
       const internal = await esAll(c.id, "txlistinternal", addr, key);
@@ -514,6 +524,7 @@ async function runFetch() {
   store.set("vaultsFetched", VAULTS.map(v => v.addr.toLowerCase()));
   setData(all, Date.now());
   $("btnFetch").disabled = false;
+  $("reload").disabled = false; $("reload").classList.remove("spinning");
 }
 async function fetchNodeReal(addr, vault) {
   if (!NODEREAL_BSC) throw new Error("cần NodeReal URL trong config.local.js (chạy ./set-key.sh)");
@@ -888,13 +899,14 @@ $("vaultList").innerHTML = "Theo dõi: " + VAULTS.map(v => `<b>${v.name}</b> <co
 $("vaultSeg").innerHTML = VAULTS.map(v => `<button data-v="${v.id}">${v.name}</button>`).join("") + `<button data-v="all">Tất cả</button>`;
 $("csvVault").innerHTML = VAULTS.map(v => `<option value="${v.id}">CSV thuộc vault: ${v.name}</option>`).join("");
 if (state.vault !== "all" && !vaultById[state.vault]) state.vault = 1;
-$("apikey").value = window.ETHERSCAN_API_KEY || store.get("apikey", "");
+localStorage.removeItem("bp_apikey"); // key cũ từng lưu từ ô nhập — nay chỉ đọc từ config.local.js
 $("chainBoxes").innerHTML = CHAINS.map(c => c.api === false
   ? `<label title="Chưa có nguồn API — chỉ dữ liệu đã audit của ${vaultById[1].name}"><input type="checkbox" id="ch_${c.id}" disabled><i class="swatch" style="background:${chainColor(c.id)}"></i>${c.name} (audit)</label>`
   : `<label><input type="checkbox" id="ch_${c.id}" ${c.on ? "checked" : ""}><i class="swatch" style="background:${chainColor(c.id)}"></i>${c.name}</label>`).join("");
 $("csvChain").innerHTML = CHAINS.map(c => `<option value="${c.id}">CSV thuộc chain: ${c.name}</option>`).join("");
 $("labels").value = Object.entries(state.labels).map(([a, l]) => `${a},${l}`).join("\n");
 $("btnFetch").onclick = runFetch;
+$("reload").onclick = runFetch;
 $("btnCsv").onclick = () => $("csvFile").click();
 $("csvFile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
