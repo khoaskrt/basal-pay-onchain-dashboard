@@ -238,7 +238,7 @@ const VERIFIED = {
   "137:0xc2132d05d31c914a87c6611c10748aeb04b58e8f": "USDT0", // USDT0 trên Polygon PoS
 };
 // BSC lấy qua endpoint công khai của NodeReal (miễn phí, không cần key) vì Etherscan free không hỗ trợ BSC
-const NODEREAL_BSC = "https://bsc-mainnet.nodereal.io/v1/64a9df0874fb4a93b9d0a3849de012d3";
+const NODEREAL_BSC = window.NODEREAL_BSC_URL || ""; // đặt trong config.local.js (./set-key.sh), không commit
 const isVerified = t => t.kind === "token" && !!VERIFIED[t.chain + ":" + t.contract];
 
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -394,6 +394,7 @@ async function runFetch() {
   $("btnFetch").disabled = false;
 }
 async function fetchNodeReal(addr, vault) {
+  if (!NODEREAL_BSC) throw new Error("cần NodeReal URL trong config.local.js (chạy ./set-key.sh)");
   const me = addr.toLowerCase(), out = [];
   for (const side of ["toAddress", "fromAddress"]) {
     let pageKey = "";
@@ -800,7 +801,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
 state.txs = assignVault(state.txs); // dữ liệu cũ (1 ví) được gán vault theo from/to
 state.txs.forEach(t => { t.usd = priceUSD(t); }); // áp quy tắc định giá hiện hành cho dữ liệu đã lưu
 render();
-// Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC không cần key, Polygon dùng key trong config.local.js
+// Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC dùng NodeReal URL, Polygon dùng Etherscan key — cả hai trong config.local.js
 const fetched = store.get("vaultsFetched", []);
 if (!state.txs.length || VAULTS.some(v => !fetched.includes(v.addr.toLowerCase()))) {
   log("Có Central Vault chưa có dữ liệu trong trình duyệt này — đang tự tải…"); runFetch();

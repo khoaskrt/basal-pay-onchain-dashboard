@@ -345,7 +345,7 @@ const VERIFIED = {
   "9745:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb": "USDT0", // USDT0 trên Plasma (theo sổ đối soát)
 };
 // BSC lấy qua endpoint công khai của NodeReal (miễn phí, không cần key) vì Etherscan free không hỗ trợ BSC
-const NODEREAL_BSC = "https://bsc-mainnet.nodereal.io/v1/64a9df0874fb4a93b9d0a3849de012d3";
+const NODEREAL_BSC = window.NODEREAL_BSC_URL || ""; // đặt trong config.local.js (./set-key.sh), không commit
 const isVerified = t => t.kind === "token" && !!VERIFIED[t.chain + ":" + t.contract];
 
 // Dữ liệu chuẩn đã audit của Central Vault (1) — cv1_audited.local.js, tạo bằng tools/build_cv1_audited.py.
@@ -516,6 +516,7 @@ async function runFetch() {
   $("btnFetch").disabled = false;
 }
 async function fetchNodeReal(addr, vault) {
+  if (!NODEREAL_BSC) throw new Error("cần NodeReal URL trong config.local.js (chạy ./set-key.sh)");
   const me = addr.toLowerCase(), out = [];
   for (const side of ["toAddress", "fromAddress"]) {
     let pageKey = "";
@@ -931,7 +932,7 @@ state.txs = assignVault(state.txs); // dữ liệu cũ (1 ví) được gán vau
 state.txs.forEach(t => { t.usd = priceUSD(t); }); // áp quy tắc định giá hiện hành cho dữ liệu đã lưu
 state.txs = withAudited(state.txs);
 render();
-// Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC không cần key, Polygon dùng key trong config.local.js
+// Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC dùng NodeReal URL, Polygon dùng Etherscan key — cả hai trong config.local.js
 const fetched = store.get("vaultsFetched", []);
 if (!state.txs.length || VAULTS.some(v => !fetched.includes(v.addr.toLowerCase()))) {
   log("Có Central Vault chưa có dữ liệu trong trình duyệt này — đang tự tải…"); runFetch();
