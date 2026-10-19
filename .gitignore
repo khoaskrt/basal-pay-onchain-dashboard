@@ -1,0 +1,7 @@
+# Etherscan API key (tạo bằng ./set-key.sh) — KHÔNG commit
+config.local.js
+# Cấu hình Claude Code cá nhân
+.claude/settings.local.json
+# Dữ liệu export từ dashboard
+*.csv
+.DS_Store
