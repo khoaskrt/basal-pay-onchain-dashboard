@@ -104,7 +104,6 @@ code { font: 11px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-2)
 .card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .card h2 { font-size: 14px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
 .card .sub { font-size: 11.5px; color: var(--ink-3); margin: 0 0 12px; }
-.brand p.audit-note { font-size: 11.5px; margin-top: 4px; max-width: 760px; white-space: normal; }
 .hdr-right { display: flex; align-items: center; gap: 10px; }
 .tbtn { font: inherit; font-size: 11px; font-weight: 600; color: var(--ink-2); background: var(--sunken); border: 1px solid transparent; border-radius: 7px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
 .tbtn:hover { color: var(--ink); border-color: var(--border); }
@@ -196,9 +195,8 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
     <div class="brand">
       <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTQzOCIgaGVpZ2h0PSIxNDM4IiB2aWV3Qm94PSIwIDAgMTQzOCAxNDM4IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0xMDg5LjA5IDBIMzQ4LjUxQzE1Ni4wMzMgMCAwIDE1Ni4wMzMgMCAzNDguNTFWMTA4OS4wOUMwIDEyODEuNTcgMTU2LjAzMyAxNDM3LjYgMzQ4LjUxIDE0MzcuNkgxMDg5LjA5QzEyODEuNTcgMTQzNy42IDE0MzcuNiAxMjgxLjU3IDE0MzcuNiAxMDg5LjA5VjM0OC41MUMxNDM3LjYgMTU2LjAzMyAxMjgxLjU3IDAgMTA4OS4wOSAwWiIgZmlsbD0iIzEwMzNGRiIvPjxwYXRoIGQ9Ik0zMzIuNDkgNDA5LjA1SDUxNi41OEM2NDQuOTEgNDA5LjA1IDcyNC41OCA0NzcuMiA3MjQuNTggNTgwLjc1QzcyNC41OCA2MzIuMDggNzA1LjExMCA2NzEuOSA2NzEuNDggNjk5LjM0QzcyMS4wNCA3MjguNTUgNzUxLjEzIDc3Ny4yMiA3NTEuMTMgODQzLjZDNzUxLjEzIDk1NC4yMyA2NjUuMjkgMTAyOC42IDUzNi4wNyAxMDI4LjZIMzMyLjQ5VjQwOS4wNVpNNTE2LjU4IDY1MC42NUM1NzQuMSA2NTAuNjUgNTk4IDYyNy42NSA1OTggNTg4LjdDNTk4IDU0OS43NSA1NzEuNDUgNTI2Ljc1IDUxNi41OCA1MjYuNzVINDU5LjA1VjY1MC42NUg1MTYuNThaTTUzNi4wNSA5MDkuOTdDNTk0LjQ2IDkwOS45NyA2MjIuNzkgODc4Ljk3IDYyMi43OSA4MzYuNTFDNjIyLjc5IDc5NC45MiA1OTQuNDYgNzYyLjE3IDUzNi4wNSA3NjIuMTdINDU5LjA1VjkwOS45N0g1MzYuMDVaIiBmaWxsPSJ3aGl0ZSIvPjxwYXRoIGQ9Ik0xMDI5LjE3IDkzOS40SDgxOS42MlYxMDI3LjY4SDEwMjkuMTdWOTM5LjRaIiBmaWxsPSJ3aGl0ZSIvPjxwYXRoIGQ9Ik05NTMuMTEgNDYzLjU0SDgxOS42N1Y4NzcuNkg5MTEuMTlWNzM4LjZIOTUzLjE5QzEwNDQuMTEgNzM4LjYgMTEwNS4xOSA2ODMuMzMgMTEwNS4xOSA2MDEuMDZDMTEwNS4xOSA1MTguNzkgMTA0NC4wMyA0NjMuNTQgOTUzLjExIDQ2My41NFpNMTAxMi40NSA2MDEuMDVDMTAxMi40NSA2MjAuNCAxMDA0Ljc0IDY1Mi44NiA5NTMuMTEgNjUyLjg2SDkxMS4xMVY1NDkuMjdIOTUzLjExQzEwMDQuNzQgNTQ5LjI3IDEwMTIuNDUgNTgxLjczMCAxMDEyLjQ1IDYwMS4wNVoiIGZpbGw9IndoaXRlIi8+PC9zdmc+" alt="">
       <div>
-        <h1>Dòng tiền on-chain · Central Vault</h1>
-        <p>Basal Pay · Treasury · <span id="addrLabel"></span></p>
-        <p class="audit-note" id="auditInfo"></p>
+        <h1>Basal Pay Operational Dashboard</h1>
+        <p>Basal Pay Operational Dashboard</p>
       </div>
     </div>
     <div class="top-right">
@@ -354,7 +352,8 @@ const VERIFIED = {
   "9745:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb": "USDT0", // USDT0 trên Plasma (theo sổ đối soát)
 };
 // BSC lấy qua NodeReal (URL trong config.local.js) vì Etherscan free không hỗ trợ BSC
-const NODEREAL_BSC = window.NODEREAL_BSC_URL || ""; // đặt trong config.local.js (./set-key.sh), không commit
+// URL chính + URL dự phòng (key NodeReal thứ hai, hoặc RPC khác hỗ trợ nr_getAssetTransfers) — đặt trong config.local.js, không commit
+const NODEREAL_BSC = [window.NODEREAL_BSC_URL, window.NODEREAL_BSC_URL_BACKUP].filter(Boolean);
 const isVerified = t => t.kind === "token" && !!VERIFIED[t.chain + ":" + t.contract];
 
 // Dữ liệu chuẩn đã audit của Central Vault (1) — cv1_audited.local.js, tạo bằng tools/build_cv1_audited.py.
@@ -526,18 +525,40 @@ async function runFetch() {
   $("btnFetch").disabled = false;
   $("reload").disabled = false; $("reload").classList.remove("spinning");
 }
+// Gọi nr_getAssetTransfers: lỗi giới hạn tốc độ/mạng thì chuyển sang URL dự phòng, hết URL thì chờ tăng dần rồi thử lại
+async function nrCall(q) {
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "nr_getAssetTransfers", params: [q] });
+  let lastErr;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt) {
+      const wait = 2000 * 2 ** (attempt - 1); // 2s, 4s, 8s
+      $("status").lastChild.textContent += ` · NodeReal giới hạn tốc độ, thử lại sau ${wait / 1000}s…`;
+      await sleep(wait);
+    }
+    for (const url of NODEREAL_BSC) {
+      try {
+        const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body });
+        const j = await r.json().catch(() => ({ error: { message: `HTTP ${r.status}` } }));
+        if (!j.error) return j;
+        lastErr = new Error(j.error.message);
+        if (!/limit|rate|too many|quota|exceed|HTTP 429|HTTP 5/i.test(j.error.message)) throw lastErr; // lỗi khác: không thử lại
+      } catch (e) {
+        if (e === lastErr) throw e;
+        lastErr = e; // lỗi mạng: thử URL tiếp theo
+      }
+    }
+  }
+  throw lastErr;
+}
 async function fetchNodeReal(addr, vault) {
-  if (!NODEREAL_BSC) throw new Error("cần NodeReal URL trong config.local.js (chạy ./set-key.sh)");
+  if (!NODEREAL_BSC.length) throw new Error("cần NodeReal URL trong config.local.js (chạy ./set-key.sh)");
   const me = addr.toLowerCase(), out = [];
   for (const side of ["toAddress", "fromAddress"]) {
     let pageKey = "";
     for (let i = 0; i < 20; i++) {
       const q = { category: ["external", "internal", "20"], [side]: addr, order: "asc", excludeZeroValue: true, maxCount: "0x3e8" };
       if (pageKey) q.pageKey = pageKey;
-      const r = await fetch(NODEREAL_BSC, { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "nr_getAssetTransfers", params: [q] }) });
-      const j = await r.json();
-      if (j.error) throw new Error(j.error.message);
+      const j = await nrCall(q);
       for (const x of j.result.transfers) {
         if (x.receiptsStatus !== 1) continue;
         const from = x.from.toLowerCase(), to = (x.to || "").toLowerCase();
@@ -643,7 +664,6 @@ const hideTip = () => tip.style.opacity = 0;
 
 function render() {
   const shown = state.vault === "all" ? VAULTS : [vaultById[state.vault]];
-  $("addrLabel").innerHTML = shown.map(v => `<b>${v.name}</b> <code>${v.addr}</code>`).join(" + ");
   document.querySelectorAll("#vaultSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === String(state.vault)));
   const valued = scopedTxs().filter(t => valueOf(t) != null);
   // danh sách kỳ
@@ -879,11 +899,12 @@ function renderMeta() {
   // gộp các chain cùng mốc cắt: "BSC/Kaia/Plasma tới 02/08 06:59"
   const byCut = d3.groups(Object.entries(audCut), ([, v]) => v.ts).sort((a, b) => a[0] - b[0]);
   const cutTxt = byCut.map(([ts, cs]) => `${cs.map(([c]) => chainById[c]?.name).join("/")} tới ${d3.utcFormat("%d/%m/%Y %H:%M")(localDate(ts))}`).join(" · ");
-  $("auditInfo").innerHTML = AUD
-    ? `${vaultById[1].short}: số liệu chuẩn từ sổ đối soát đã audit — ${cutTxt} (UTC+7). Sau mốc: dữ liệu API, nhãn “chưa audit”.`
-    : `${vaultById[1].short}: chưa nạp sổ đối soát (cv1_audited.local.js) — đang dùng dữ liệu API.`;
+  const auditTxt = AUD
+    ? `${vaultById[1].short} dùng số liệu đã đối soát: ${cutTxt} (UTC+7); giao dịch sau mốc lấy từ API, gắn nhãn "chưa audit". `
+    : `${vaultById[1].short} chưa nạp sổ đối soát — đang dùng dữ liệu API. `;
   const p = Object.entries(state.prices).map(([k, v]) => `${k}=$${v}`).join(", ");
   $("footnote").innerHTML = `Ghi chú phương pháp: gom kỳ theo giờ Việt Nam (UTC+7), tuần bắt đầu Thứ Hai. ` +
+    auditTxt +
     `Chỉ tính <b>USDT chuẩn</b> theo địa chỉ hợp đồng: BSC <code>0x55d3…7955</code>, Polygon USDT0 <code>0xc213…8e8f</code>, Kaia <code>0xd077…4fdb</code>, Plasma USDT0 <code>0xb8ce…5ebb</code>, quy 1:1 USD. ${unpriced} transfer khác (token spam giả tên USDT, BNB/POL native, token khác) bị loại khỏi Sankey, KPI và mặc định ẩn khỏi bảng. BSC lấy qua NodeReal, Polygon qua Etherscan API V2. Bỏ qua transfer giá trị 0 (thường là spam/address poisoning) và giao dịch lỗi. ` +
     `"Giữ lại trong ví" / "Từ số dư đầu kỳ" là phần chênh lệch vào–ra trong kỳ, không phải số dư thực. ` +
     `Chế độ "Tất cả" gộp ${VAULTS.map(v => v.name).join(" và ")}, bỏ các giao dịch chuyển qua lại giữa hai vault khỏi KPI, Sankey và timeline để không đếm hai lần (bảng vẫn hiện, gắn nhãn "nội bộ").`;
@@ -901,7 +922,7 @@ $("csvVault").innerHTML = VAULTS.map(v => `<option value="${v.id}">CSV thuộc v
 if (state.vault !== "all" && !vaultById[state.vault]) state.vault = 1;
 localStorage.removeItem("bp_apikey"); // key cũ từng lưu từ ô nhập — nay chỉ đọc từ config.local.js
 $("chainBoxes").innerHTML = CHAINS.map(c => c.api === false
-  ? `<label title="Chưa có nguồn API — chỉ dữ liệu đã audit của ${vaultById[1].name}"><input type="checkbox" id="ch_${c.id}" disabled><i class="swatch" style="background:${chainColor(c.id)}"></i>${c.name} (audit)</label>`
+  ? `<label title="Chưa có nguồn API — chỉ dữ liệu đã audit của ${vaultById[1].name}"><input type="checkbox" id="ch_${c.id}" disabled><i class="swatch" style="background:${chainColor(c.id)}"></i>${c.name}</label>`
   : `<label><input type="checkbox" id="ch_${c.id}" ${c.on ? "checked" : ""}><i class="swatch" style="background:${chainColor(c.id)}"></i>${c.name}</label>`).join("");
 $("csvChain").innerHTML = CHAINS.map(c => `<option value="${c.id}">CSV thuộc chain: ${c.name}</option>`).join("");
 $("labels").value = Object.entries(state.labels).map(([a, l]) => `${a},${l}`).join("\n");

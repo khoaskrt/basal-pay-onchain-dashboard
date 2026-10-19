@@ -26,9 +26,21 @@ else
   if [[ "$RES" == *'"result"'* ]]; then echo "NodeReal URL hợp lệ (BSC OK)."; else echo "Cảnh báo: NodeReal trả về: $RES"; fi
 fi
 
+printf "Dán NodeReal BSC URL DỰ PHÒNG (key thứ hai, tuỳ chọn) rồi Enter (bỏ trống để giữ nguyên): "
+read -rs NRB; echo
+NRB=$(printf '%s' "$NRB" | tr -d '[:space:]')
+if [[ -z "$NRB" ]]; then NRB=$(old NODEREAL_BSC_URL_BACKUP)
+else
+  [[ "$NRB" =~ ^[A-Za-z0-9]+$ ]] && NRB="https://bsc-mainnet.nodereal.io/v1/$NRB"
+  if [[ ! "$NRB" =~ ^https://[A-Za-z0-9.-]+/[A-Za-z0-9/_-]+$ ]]; then echo "URL dự phòng không hợp lệ."; exit 1; fi
+  RES=$(curl -s -X POST -H 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"nr_getAssetTransfers","params":[{"category":["20"],"toAddress":"'$TEST_ADDR'","maxCount":"0x1"}]}' "$NRB")
+  if [[ "$RES" == *'"transfers"'* ]]; then echo "URL dự phòng hợp lệ (nr_getAssetTransfers OK)."; else echo "Cảnh báo: URL dự phòng trả về: $RES"; fi
+fi
+
 umask 077
 {
   printf 'window.ETHERSCAN_API_KEY = "%s";\n' "$KEY"
   printf 'window.NODEREAL_BSC_URL = "%s";\n' "$NR"
+  [[ -n "$NRB" ]] && printf 'window.NODEREAL_BSC_URL_BACKUP = "%s";\n' "$NRB"
 } > config.local.js
 echo "Đã lưu vào config.local.js. Tải lại dashboard (http://localhost:8765) rồi bấm 'Tải dữ liệu on-chain'."
