@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Basal Pay · Treasury Ops — Option C (Workbench)</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+<script src="../config.local.js" onerror="void 0"></script>
+<style>
+  /* OPTION C — Analyst Workbench: tab theo tác vụ, bộ lọc dạng câu, KPI kiểu báo cáo tài chính */
+  :root {
+    color-scheme: light;
+    --page: #f6f5f1; --surface-1: #fffefb; --surface-2: #f1efe9;
+    --text-primary: #16150f; --text-secondary: #57544a; --text-muted: #8f8b7e;
+    --grid: #e6e3da; --axis: #c9c5b8; --border: #e3e0d6;
+    --node-neutral: #8f8b7e; --hub: #16150f;
+    --good: #0b6b3a; --critical: #b42318; --ink: #1c2b4a;
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
+    --wash: rgba(22,21,15,0.05);
+    --serif: "Iowan Old Style", "Source Serif Pro", Georgia, serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #11110f; --surface-1: #191916; --surface-2: #22221e;
+      --text-primary: #efede6; --text-secondary: #bdb9ad; --text-muted: #85826f;
+      --grid: #2b2a25; --axis: #3a3932; --border: #2b2a25;
+      --node-neutral: #85826f; --hub: #efede6;
+      --good: #4ade80; --critical: #f87171; --ink: #a9bdf0;
+      --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+      --wash: rgba(255,255,255,0.06);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--text-primary); font: 14px/1.5 Inter, system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: var(--ink); } code { font: 11.5px ui-monospace, Menlo, monospace; }
+
+  header.top { background: var(--surface-1); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+  .top-in { max-width: 1360px; margin: 0 auto; padding: 0 32px; display: flex; align-items: center; gap: 32px; height: 56px; }
+  .brand { font-family: var(--serif); font-size: 18px; font-weight: 600; white-space: nowrap; }
+  .brand span { font-family: Inter, system-ui, sans-serif; font-size: 12px; color: var(--text-muted); font-weight: 500; margin-left: 8px; }
+  nav.tabs { display: flex; gap: 4px; height: 100%; }
+  nav.tabs button { font: inherit; font-size: 13.5px; border: 0; background: none; color: var(--text-secondary); padding: 0 14px; cursor: pointer;
+                    border-bottom: 2px solid transparent; height: 100%; }
+  nav.tabs button:hover { color: var(--text-primary); }
+  nav.tabs button[aria-selected=true] { color: var(--text-primary); border-bottom-color: var(--ink); font-weight: 600; }
+  nav.tabs .badge { font-size: 11px; background: var(--surface-2); border-radius: 999px; padding: 1px 7px; margin-left: 6px; color: var(--text-secondary); }
+  .top-in .sp { flex: 1; }
+  #dataInfo { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+  /* Bộ lọc dạng câu */
+  .ctx { background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .ctx-in { max-width: 1360px; margin: 0 auto; padding: 12px 32px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; color: var(--text-secondary); }
+  .ctx-in b { color: var(--text-primary); font-weight: 600; }
+  select, input[type=password] { font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface-1); }
+  .seg button { font: inherit; font-size: 13px; border: 0; background: transparent; padding: 5px 11px; color: var(--text-secondary); cursor: pointer; border-right: 1px solid var(--border); }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed=true] { background: var(--ink); color: var(--surface-1); }
+  .btn { font: inherit; font-size: 13px; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); cursor: pointer; }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary { background: var(--ink); color: var(--surface-1); border-color: var(--ink); }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  .wrap { max-width: 1360px; margin: 0 auto; padding: 28px 32px 48px; }
+  .tab { display: none; } .tab.on { display: block; }
+  .addr { font-size: 12px; color: var(--text-muted); margin-bottom: 18px; }
+
+  /* KPI kiểu báo cáo */
+  .hero { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; border-top: 2px solid var(--text-primary); border-bottom: 1px solid var(--border); margin-bottom: 36px; }
+  .kpi { padding: 18px 20px 18px 0; }
+  .kpi + .kpi { padding-left: 20px; border-left: 1px solid var(--border); }
+  .kpi .k { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+  .kpi .v { font-family: var(--serif); font-size: 32px; font-weight: 600; margin: 6px 0 2px; font-variant-numeric: tabular-nums lining-nums; letter-spacing: -.01em; }
+  .kpi.big .v { font-size: 44px; }
+  .kpi .d { font-size: 12.5px; color: var(--text-secondary); }
+
+  section.blk { margin-bottom: 40px; }
+  .bh { display: flex; align-items: baseline; gap: 14px; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .bh .num { font-family: var(--serif); color: var(--text-muted); font-size: 15px; margin-right: 10px; }
+  .bh h2 { display: inline; font-family: var(--serif); font-size: 21px; font-weight: 600; margin: 0; }
+  .bh .hint { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 0; }
+  .paper { background: var(--surface-1); border: 1px solid var(--border); border-radius: 4px; padding: 18px; }
+
+  #sankey svg, #timeline svg { display: block; width: 100%; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
+  .legend span { display: inline-flex; gap: 6px; align-items: center; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--text-muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; position: sticky; top: 0; background: var(--surface-1); border-bottom: 1px solid var(--text-primary); }
+  tbody tr:hover { background: var(--wash); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.in, td.out { font-weight: 700; font-size: 11.5px; letter-spacing: .04em; }
+  .tablebox { max-height: calc(100vh - 260px); overflow: auto; }
+  .empty { color: var(--text-muted); padding: 56px; text-align: center; font-family: var(--serif); font-size: 16px; }
+  .note { font-size: 12px; color: var(--text-muted); }
+  .in { color: var(--good); } .out { color: var(--critical); }
+  .chk { font-size: 13px; color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; }
+
+  /* Tab nguồn dữ liệu */
+  .cols { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); gap: 28px; }
+  .fld { margin-bottom: 18px; }
+  .fld > span { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 8px; }
+  .fld input[type=password] { width: 100%; max-width: 420px; }
+  .help { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; }
+  .chains { display: flex; flex-wrap: wrap; gap: 14px; }
+  .chains label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #vaultList { font-size: 13px; color: var(--text-secondary); line-height: 1.8; }
+  #status { font: 12px/1.6 ui-monospace, Menlo, monospace; color: var(--text-secondary); white-space: pre-line; border-left: 2px solid var(--border); padding: 4px 12px; min-height: 40px; }
+  #status:empty::before { content: "Chưa có tác vụ đồng bộ."; color: var(--text-muted); }
+  #status .err { color: var(--critical); }
+  textarea { width: 100%; min-height: 120px; font: 12px ui-monospace, monospace; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; padding: 10px; }
+  #footnote { font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+
+  .tooltip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px;
+             padding: 10px 12px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.12); opacity: 0; transition: opacity .1s; z-index: 30; max-width: 340px; }
+  .tooltip b { font-weight: 600; } .tooltip .m { color: var(--text-secondary); }
+
+  @media (max-width: 1000px) { .hero { grid-template-columns: 1fr 1fr; } .kpi:nth-child(3) { border-left: 0; padding-left: 0; } .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">Basal Pay<span>Treasury Workbench</span></div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="overview" aria-selected="true">Tổng quan</button>
+      <button role="tab" data-tab="ledger" aria-selected="false">Sổ giao dịch</button>
+      <button role="tab" data-tab="data" aria-selected="false">Nguồn dữ liệu &amp; phương pháp</button>
+    </nav>
+    <div class="sp"></div>
+    <div id="dataInfo"></div>
+  </div>
+</header>
+
+<div class="ctx">
+  <div class="ctx-in">
+    Đang xem <div class="seg" id="vaultSeg" role="group" aria-label="Chọn Central Vault"></div>
+    theo
+    <div class="seg" id="granSeg">
+      <button data-g="day" aria-pressed="false">ngày</button>
+      <button data-g="week" aria-pressed="true">tuần</button>
+      <button data-g="all" aria-pressed="false">toàn bộ</button>
+    </div>
+    <select id="periodSel" aria-label="Kỳ"></select>
+    , đơn vị <select id="unitSel"></select>
+    , hiện top <select id="topN"><option>5</option><option selected>8</option><option>12</option><option>20</option></select> đối tác mỗi phía.
+  </div>
+</div>
+
+<div class="wrap">
+  <!-- TAB: Tổng quan -->
+  <div class="tab on" id="tab-overview">
+    <div class="addr" id="addrLabel"></div>
+    <div class="hero">
+      <div class="kpi big"><div class="k">Net flow</div><div class="v" id="kNet">–</div><div class="d">Inflow − Outflow trong kỳ</div></div>
+      <div class="kpi"><div class="k">Inflow</div><div class="v" id="kIn">–</div><div class="d" id="kInN"></div></div>
+      <div class="kpi"><div class="k">Outflow</div><div class="v" id="kOut">–</div><div class="d" id="kOutN"></div></div>
+      <div class="kpi"><div class="k">Đối tác</div><div class="v" id="kCp">–</div><div class="d" id="kCpD"></div></div>
+    </div>
+
+    <section class="blk">
+      <div class="bh"><div><span class="num">01</span><h2 id="sankeyTitle">Money flow</h2><p class="hint">Nguồn tiền → chain → Central Vault → chain → nơi nhận. Độ dày dải tỷ lệ với giá trị.</p></div><div class="legend" id="legend"></div></div>
+      <div class="paper"><div id="sankey"><div class="empty">Chưa có dữ liệu — vào tab “Nguồn dữ liệu” để tải.</div></div></div>
+    </section>
+
+    <section class="blk">
+      <div class="bh"><div><span class="num">02</span><h2>Diễn biến theo thời gian</h2><p class="hint">Trên trục 0 = inflow, dưới = outflow, xếp chồng theo chain. Bấm một cột để chuyển kỳ.</p></div></div>
+      <div class="paper"><div id="timeline"></div></div>
+    </section>
+  </div>
+
+  <!-- TAB: Sổ giao dịch -->
+  <div class="tab" id="tab-ledger">
+    <section class="blk">
+      <div class="bh"><div><span class="num">03</span><h2>Sổ giao dịch trong kỳ</h2><p class="hint">Chỉ USDT chuẩn được tính giá trị. Giao dịch bị loại mặc định ẩn.</p></div>
+        <label class="chk"><input type="checkbox" id="showSpam"> Hiện giao dịch bị loại (<span id="spamN">0</span>)</label></div>
+      <div class="paper" style="padding:0"><div class="tablebox"><table id="txTable"></table></div></div>
+    </section>
+  </div>
+
+  <!-- TAB: Nguồn dữ liệu -->
+  <div class="tab" id="tab-data">
+    <div class="cols">
+      <section>
+        <div class="bh"><div><span class="num">04</span><h2>Đồng bộ dữ liệu</h2></div></div>
+        <div class="fld"><span>Ví theo dõi</span><div id="vaultList"></div></div>
+        <div class="fld"><span>Etherscan API key</span><input type="password" id="apikey" placeholder="Cần cho Polygon / chain khác">
+          <div class="help">BSC tải qua NodeReal, không cần key. Key chỉ lưu trên máy này và chỉ gửi tới api.etherscan.io.</div></div>
+        <div class="fld"><span>Chain</span><div class="chains" id="chainBoxes"></div></div>
+        <div class="fld row"><button class="btn primary" id="btnFetch" type="button">Tải dữ liệu on-chain</button><button class="btn" id="btnExport" type="button">Export CSV</button><button class="btn" id="btnClear" type="button">Xoá dữ liệu</button></div>
+        <div class="fld"><span>Import CSV</span><div class="row"><select id="csvChain"></select><select id="csvVault"></select>
+          <input type="file" id="csvFile" accept=".csv" hidden><button class="btn" id="btnCsv" type="button">Chọn file…</button></div></div>
+        <div class="fld"><span>Nhật ký</span><div id="status"></div></div>
+      </section>
+      <section>
+        <div class="bh"><div><span class="num">05</span><h2>Nhãn &amp; phương pháp</h2></div></div>
+        <div class="fld"><span>Nhãn địa chỉ đối tác</span>
+          <textarea id="labels"></textarea>
+          <div class="help">Mỗi dòng: <code>địa_chỉ,nhãn</code>. Ví dụ: <code>0xabc…,Binance Hot Wallet</code></div>
+          <button class="btn" id="btnLabels" type="button" style="margin-top:8px">Lưu nhãn</button></div>
+        <div class="fld"><span>Ghi chú phương pháp</span><p id="footnote"></p></div>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="tooltip" id="tip"></div>
+
+<script>
+// Các ví Central Vault của Basal Pay. Giao dịch giữa các vault là chuyển nội bộ.
+const VAULTS = [
+  { id: 1, name: "Central Vault (1)", short: "CV1", addr: "0xb8ED09af8cFE40A4AD9Bd44513817Ab476BCf853" },
+  { id: 2, name: "Central Vault (2)", short: "CV2", addr: "0x9E0aF3f1ee72D5D576e402d952EAed228e361D4B" },
+];
+const vaultById = Object.fromEntries(VAULTS.map(v => [v.id, v]));
+const vaultOfAddr = Object.fromEntries(VAULTS.map(v => [v.addr.toLowerCase(), v.id]));
+const isInternal = t => vaultOfAddr[t.cp] != null; // đối tác là một vault khác
+const TZ_OFFSET_H = 7; // gom ngày/tuần theo giờ Việt Nam (UTC+7)
+
+// Màu theo chain cố định (màu đi theo thực thể, không theo thứ hạng)
+const CHAINS = [
+  { id: 56,    name: "BSC",      native: "BNB", cg: "binancecoin",             explorer: "https://bscscan.com",               color: "--s1", on: true },
+  { id: 137,   name: "Polygon",  native: "POL", cg: "polygon-ecosystem-token", explorer: "https://polygonscan.com",           color: "--s2", on: true },
+  { id: 1,     name: "Ethereum", native: "ETH", cg: "ethereum",                explorer: "https://etherscan.io",              color: "--s3", on: false },
+  { id: 42161, name: "Arbitrum", native: "ETH", cg: "ethereum",                explorer: "https://arbiscan.io",               color: "--s4", on: false },
+  { id: 8453,  name: "Base",     native: "ETH", cg: "ethereum",                explorer: "https://basescan.org",              color: "--s5", on: false },
+  { id: 10,    name: "Optimism", native: "ETH", cg: "ethereum",                explorer: "https://optimistic.etherscan.io",   color: "--s8", on: false },
+];
+const chainById = Object.fromEntries(CHAINS.map(c => [c.id, c]));
+// Chỉ tính USDT chuẩn — nhận diện theo ĐỊA CHỈ HỢP ĐỒNG, không theo tên (ví bị spam token giả tên "USDT").
+// Đã đối chiếu symbol() on-chain ngày 2026-10-19. Mọi token khác (kể cả BNB/POL native) không được tính.
+const VERIFIED = {
+  "56:0x55d398326f99059ff775485246999027b3197955": "USDT",   // Tether USD (BSC-USD) trên BNB Chain
+  "137:0xc2132d05d31c914a87c6611c10748aeb04b58e8f": "USDT0", // USDT0 trên Polygon PoS
+};
+// BSC lấy qua endpoint công khai của NodeReal (miễn phí, không cần key) vì Etherscan free không hỗ trợ BSC
+const NODEREAL_BSC = "https://bsc-mainnet.nodereal.io/v1/64a9df0874fb4a93b9d0a3849de012d3";
+const isVerified = t => t.kind === "token" && !!VERIFIED[t.chain + ":" + t.contract];
+
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const chainColor = id => css(chainById[id]?.color || "--s8");
+const $ = id => document.getElementById(id);
+const store = {
+  get: (k, d) => { try { return JSON.parse(localStorage.getItem("bp_" + k)) ?? d; } catch { return d; } },
+  set: (k, v) => localStorage.setItem("bp_" + k, JSON.stringify(v)),
+};
+
+let state = {
+  vault: store.get("vault", 1),       // 1 | 2 | "all"
+  txs: store.get("txs", []),          // bản ghi chuẩn hoá, mỗi bản ghi có trường vault
+  prices: store.get("prices", {}),    // giá native hiện tại (USD)
+  fetchedAt: store.get("fetchedAt", null),
+  labels: store.get("labels", {}),
+  gran: "week", period: null, unit: "USD", topN: 8,
+};
+
+// ---------- helpers ----------
+const short = a => a ? a.slice(0, 6) + "…" + a.slice(-4) : "";
+const label = a => vaultById[vaultOfAddr[a?.toLowerCase()]]?.name || state.labels[a?.toLowerCase()] || short(a);
+const hubName = () => state.vault === "all" ? "Central Vault (gộp)" : vaultById[state.vault].name;
+// giao dịch của vault đang chọn; chế độ gộp lấy cả hai (kể cả nội bộ — dùng cho bảng)
+const vaultTxs = () => state.vault === "all" ? state.txs : state.txs.filter(t => t.vault === state.vault);
+// giao dịch dùng để tính KPI / Sankey / timeline: chế độ gộp bỏ chuyển nội bộ để không đếm hai lần
+const scopedTxs = () => vaultTxs().filter(t => state.vault !== "all" || !isInternal(t));
+const fmtNum = (v, unit) => {
+  const abs = Math.abs(v);
+  const s = abs >= 1e6 ? d3.format(".2~s")(v).replace("G","B") : abs >= 1000 ? d3.format(",.0f")(v) : d3.format(",.2f")(v);
+  return unit === "USD" ? (v < 0 ? "−$" + s.replace("-", "") : "$" + s) : s + " " + unit;
+};
+const localDate = ts => new Date((ts + TZ_OFFSET_H * 3600) * 1000); // dùng getUTC* trên kết quả
+function bucketKey(ts, gran) {
+  const d = localDate(ts);
+  if (gran === "all") return "all";
+  if (gran === "day") return d.toISOString().slice(0, 10);
+  const day = (d.getUTCDay() + 6) % 7; // Thứ Hai = 0
+  const mon = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day));
+  return mon.toISOString().slice(0, 10);
+}
+function bucketLabel(key, gran) {
+  if (key === "all") return "Toàn bộ thời gian";
+  if (gran === "day") return key;
+  const s = new Date(key + "T00:00:00Z"), e = new Date(s.getTime() + 6 * 864e5);
+  return `Tuần ${key} → ${e.toISOString().slice(0, 10)}`;
+}
+function valueOf(t) {
+  if (state.unit === "USD") return t.usd;
+  return t.token === state.unit && isVerified(t) ? t.amount : null;
+}
+
+// ---------- tải dữ liệu từ Etherscan V2 ----------
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function esCall(chainid, params, key) {
+  const qs = new URLSearchParams({ chainid, ...params, apikey: key });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const r = await fetch("https://api.etherscan.io/v2/api?" + qs);
+    const j = await r.json();
+    if (j.status === "1") return j.result;
+    if (j.message === "No transactions found" || (Array.isArray(j.result) && j.result.length === 0)) return [];
+    const msg = typeof j.result === "string" ? j.result : j.message;
+    if (/rate limit/i.test(msg)) { await sleep(1200); continue; }
+    throw new Error(msg);
+  }
+  throw new Error("Rate limit liên tục");
+}
+async function esAll(chainid, action, addr, key) {
+  // Etherscan chỉ trả tối đa 10.000 bản ghi mỗi truy vấn (page × offset) → hết 10 trang thì
+  // tải tiếp từ block cuối cùng; bỏ các bản ghi của block cuối ở lượt trước để không trùng.
+  const out = []; const offset = 1000; let start = 0;
+  for (let round = 0; round < 50; round++) {
+    const batch = [];
+    for (let page = 1; page <= 10; page++) {
+      const res = await esCall(chainid, { module: "account", action, address: addr, startblock: start, endblock: 999999999, page, offset, sort: "asc" }, key);
+      batch.push(...res); await sleep(250);
+      if (res.length < offset) { out.push(...batch); return out; }
+    }
+    const last = +batch[batch.length - 1].blockNumber;
+    const keep = batch.filter(x => +x.blockNumber < last);
+    if (!keep.length) throw new Error(`block ${last} có hơn 10.000 bản ghi, không tải hết được`);
+    out.push(...keep); start = last;
+  }
+  throw new Error("quá nhiều bản ghi (> 50 lượt × 10.000)");
+}
+function normalize(chainid, raw, kind, addr, vault) {
+  const me = addr.toLowerCase(), c = chainById[chainid];
+  return raw.flatMap(x => {
+    if (x.isError === "1") return [];
+    const from = (x.from || "").toLowerCase(), to = (x.to || "").toLowerCase();
+    const dir = from === me && to === me ? "self" : to === me ? "in" : from === me ? "out" : null;
+    if (!dir || dir === "self") return [];
+    let token, amount, contract = "";
+    if (kind === "token") {
+      const dec = +x.tokenDecimal || 0;
+      token = (x.tokenSymbol || "?").toUpperCase(); contract = x.contractAddress.toLowerCase();
+      amount = Number(x.value) / 10 ** dec;
+    } else { token = c.native; amount = Number(x.value) / 1e18; }
+    if (!(amount > 0)) return []; // bỏ transfer 0 (thường là address poisoning)
+    return [{ vault, chain: chainid, ts: +x.timeStamp, hash: x.hash, from, to, dir, token, contract, amount, kind,
+              cp: dir === "in" ? from : to }];
+  });
+}
+function priceUSD(t) {
+  return isVerified(t) ? t.amount : null; // USDT/USDT0 tính 1:1 USD
+}
+async function fetchPrices() {
+  const ids = [...new Set(CHAINS.map(c => c.cg))].join(",");
+  try {
+    const j = await (await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`)).json();
+    state.prices = Object.fromEntries(Object.entries(j).map(([k, v]) => [k, v.usd]));
+    state.pricesAt = Date.now();
+    store.set("prices", state.prices);
+  } catch (e) { log("Không lấy được giá native từ CoinGecko — giao dịch native sẽ không có giá USD.", true); }
+}
+function log(msg, err) {
+  const el = $("status"); const line = document.createElement("div");
+  if (err) line.className = "err"; line.textContent = msg; el.appendChild(line);
+}
+async function runFetch() {
+  const key = $("apikey").value.trim();
+  if (key) store.set("apikey", key);
+  const chains = CHAINS.filter(c => $("ch_" + c.id).checked);
+  $("status").innerHTML = ""; $("btnFetch").disabled = true;
+  await fetchPrices();
+  let all = state.txs.filter(t => !chains.some(c => c.id === t.chain)); // giữ dữ liệu của chain không tải lại
+  for (const v of VAULTS) for (const c of chains) {
+    const addr = v.addr, tag = `${v.name} · ${c.name}`;
+    try {
+      log(`${tag}: đang tải…`);
+      if (c.id === 56) {
+        const rows = await fetchNodeReal(addr, v.id);
+        all.push(...rows);
+        $("status").lastChild.textContent = `${tag} (NodeReal): ${rows.length} transfer, trong đó ${rows.filter(isVerified).length} là USDT chuẩn`;
+        continue;
+      }
+      if (!key) throw new Error("cần Etherscan API key cho chain này");
+      const tok = await esAll(c.id, "tokentx", addr, key);
+      const nat = await esAll(c.id, "txlist", addr, key);
+      const internal = await esAll(c.id, "txlistinternal", addr, key);
+      const rows = [...normalize(c.id, tok, "token", addr, v.id), ...normalize(c.id, nat, "native", addr, v.id), ...normalize(c.id, internal, "internal", addr, v.id)];
+      all.push(...rows);
+      $("status").lastChild.textContent = `${tag}: ${rows.length} transfer (token ${tok.length}, native ${nat.length}, internal ${internal.length} bản ghi gốc)`;
+    } catch (e) {
+      const kept = state.txs.filter(t => t.vault === v.id && t.chain === c.id);
+      all.push(...kept); // tải lỗi thì giữ dữ liệu cũ của vault + chain này
+      $("status").lastChild.className = "err";
+      $("status").lastChild.textContent = `${tag}: lỗi — ${e.message}` + (kept.length ? ` (giữ ${kept.length} transfer đã tải trước đó)` : "");
+    }
+  }
+  store.set("vaultsFetched", VAULTS.map(v => v.addr.toLowerCase()));
+  setData(all, Date.now());
+  $("btnFetch").disabled = false;
+}
+async function fetchNodeReal(addr, vault) {
+  const me = addr.toLowerCase(), out = [];
+  for (const side of ["toAddress", "fromAddress"]) {
+    let pageKey = "";
+    for (let i = 0; i < 20; i++) {
+      const q = { category: ["external", "internal", "20"], [side]: addr, order: "asc", excludeZeroValue: true, maxCount: "0x3e8" };
+      if (pageKey) q.pageKey = pageKey;
+      const r = await fetch(NODEREAL_BSC, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "nr_getAssetTransfers", params: [q] }) });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error.message);
+      for (const x of j.result.transfers) {
+        if (x.receiptsStatus !== 1) continue;
+        const from = x.from.toLowerCase(), to = (x.to || "").toLowerCase();
+        const dir = to === me && from !== me ? "in" : from === me && to !== me ? "out" : null;
+        if (!dir) continue;
+        const isTok = x.category === "20";
+        const amount = Number(BigInt(x.value)) / 10 ** (isTok ? +x.decimal || 0 : 18);
+        if (!(amount > 0)) continue;
+        out.push({ vault, chain: 56, ts: x.blockTimeStamp, hash: x.hash, from, to, dir,
+                   token: isTok ? (x.asset || "?") : "BNB", contract: isTok ? x.contractAddress.toLowerCase() : "",
+                   amount, kind: isTok ? "token" : x.category === "internal" ? "internal" : "native", cp: dir === "in" ? from : to });
+      }
+      pageKey = j.result.pageKey;
+      if (!pageKey) break;
+      await sleep(200);
+    }
+  }
+  return out;
+}
+// gán vault cho bản ghi chưa có (dữ liệu lưu trước khi có nhiều vault) theo from/to; bỏ bản ghi không thuộc vault nào
+function assignVault(txs) {
+  return txs.filter(t => {
+    if (t.vault == null || !vaultById[t.vault]) t.vault = vaultOfAddr[(t.dir === "in" ? t.to : t.from)?.toLowerCase()];
+    if (t.cp) t.cp = t.cp.toLowerCase();
+    return t.vault != null;
+  });
+}
+function setData(txs, at) {
+  txs = assignVault(txs);
+  txs.forEach(t => { t.usd = priceUSD(t); const v = VERIFIED[t.chain + ":" + t.contract]; if (v) t.token = v; });
+  txs.sort((a, b) => a.ts - b.ts);
+  state.txs = txs; state.fetchedAt = at;
+  store.set("txs", txs); store.set("fetchedAt", at);
+  state.period = null; render();
+}
+
+// ---------- CSV ----------
+function parseCSV(text) {
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ",") { row.push(f); f = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += ch;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim()));
+}
+function importCSV(text, chainid, vault) {
+  const rows = parseCSV(text); const h = rows.shift().map(s => s.trim());
+  const col = name => h.findIndex(x => x.toLowerCase() === name.toLowerCase());
+  const me = vaultById[vault].addr.toLowerCase(); const out = [];
+  const num = s => Number(String(s ?? "").replace(/,/g, "")) || 0;
+  if (col("chain") >= 0 && col("amount") >= 0) {           // định dạng chuẩn hoá của dashboard (vault lấy từ cột vault hoặc from/to)
+    for (const r of rows) {
+      const o = Object.fromEntries(h.map((k, i) => [k, r[i]]));
+      out.push({ vault: o.vault ? +o.vault : null, chain: +o.chain, ts: +o.ts, hash: o.hash, from: o.from, to: o.to, dir: o.dir, token: o.token,
+                 contract: o.contract || "", amount: +o.amount, kind: o.kind || "token", cp: o.cp });
+    }
+  } else if (col("TokenSymbol") >= 0) {                      // Etherscan-family: Token Transfers (ERC-20) export
+    const iH = col("Transaction Hash"), iT = col("UnixTimestamp"), iF = col("From"), iTo = col("To"),
+          iV = col("TokenValue"), iS = col("TokenSymbol"), iC = col("ContractAddress");
+    for (const r of rows) {
+      const from = r[iF].toLowerCase(), to = r[iTo].toLowerCase();
+      const dir = to === me && from !== me ? "in" : from === me && to !== me ? "out" : null;
+      const amount = num(r[iV]); if (!dir || !(amount > 0)) continue;
+      out.push({ vault, chain: chainid, ts: +r[iT], hash: r[iH], from, to, dir, token: r[iS].toUpperCase(),
+                 contract: (r[iC] || "").toLowerCase(), amount, kind: "token", cp: dir === "in" ? from : to });
+    }
+  } else if (h.some(x => /^Value_IN/i.test(x))) {            // Etherscan-family: Transactions (native) export
+    const iH = col("Transaction Hash"), iT = col("UnixTimestamp"), iF = col("From"), iTo = col("To"),
+          iIn = h.findIndex(x => /^Value_IN/i.test(x)), iOut = h.findIndex(x => /^Value_OUT/i.test(x)),
+          iErr = col("ErrCode"), iSt = col("Status");
+    for (const r of rows) {
+      if ((iErr >= 0 && r[iErr]) || (iSt >= 0 && r[iSt] && !/success|^$/i.test(r[iSt]))) continue;
+      const from = r[iF].toLowerCase(), to = r[iTo].toLowerCase();
+      const vin = num(r[iIn]), vout = num(r[iOut]);
+      const dir = vin > 0 ? "in" : vout > 0 ? "out" : null; if (!dir) continue;
+      out.push({ vault, chain: chainid, ts: +r[iT], hash: r[iH], from, to, dir, token: chainById[chainid].native,
+                 contract: "", amount: dir === "in" ? vin : vout, kind: "native", cp: dir === "in" ? from : to });
+    }
+  } else throw new Error("Không nhận dạng được định dạng CSV.");
+  return out;
+}
+function exportCSV() {
+  const keys = ["vault","chain","ts","hash","from","to","dir","token","contract","amount","usd","kind","cp"];
+  const lines = [keys.join(",")].concat(state.txs.map(t => keys.map(k => t[k] ?? "").join(",")));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  a.download = `basalpay_flows_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+}
+
+// ---------- render ----------
+const tip = $("tip");
+function showTip(ev, html) { tip.innerHTML = html; tip.style.opacity = 1; moveTip(ev); }
+function moveTip(ev) {
+  const w = tip.offsetWidth, x = ev.clientX + 14 + w > innerWidth ? ev.clientX - w - 14 : ev.clientX + 14;
+  tip.style.left = x + "px"; tip.style.top = (ev.clientY + 14) + "px";
+}
+const hideTip = () => tip.style.opacity = 0;
+
+function render() {
+  const shown = state.vault === "all" ? VAULTS : [vaultById[state.vault]];
+  $("addrLabel").innerHTML = shown.map(v => `<b>${v.name}</b> <code>${v.addr}</code>`).join(" + ");
+  document.querySelectorAll("#vaultSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === String(state.vault)));
+  const valued = scopedTxs().filter(t => valueOf(t) != null);
+  // danh sách kỳ
+  const keys = [...new Set(valued.map(t => bucketKey(t.ts, state.gran)))].sort().reverse();
+  if (state.gran === "all") state.period = "all";
+  else if (!keys.includes(state.period)) state.period = keys[0] ?? null;
+  const sel = $("periodSel");
+  sel.innerHTML = keys.map(k => `<option value="${k}" ${k === state.period ? "selected" : ""}>${bucketLabel(k, state.gran)}</option>`).join("");
+  sel.style.display = state.gran === "all" ? "none" : "";
+  // đơn vị
+  const tokens = [...new Set(vaultTxs().filter(isVerified).map(t => t.token))].sort();
+  $("unitSel").innerHTML = [`<option value="USD">USD</option>`]
+    .concat(tokens.map(t => `<option value="${t}">${t}</option>`)).join("");
+  $("unitSel").value = state.unit;
+
+  const inPeriod = valued.filter(t => state.period && bucketKey(t.ts, state.gran) === state.period);
+  renderKPIs(inPeriod);
+  // mốc tỷ lệ chung: tổng vào/ra lớn nhất trong các kỳ cùng độ chi tiết → kỳ nhỏ có dải mỏng
+  const refMax = d3.max(keys, k => {
+    const v = valued.filter(t => bucketKey(t.ts, state.gran) === k);
+    return Math.max(d3.sum(v.filter(t => t.dir === "in"), valueOf), d3.sum(v.filter(t => t.dir === "out"), valueOf));
+  }) || 1;
+  renderSankey(inPeriod, refMax);
+  renderTimeline(valued, keys);
+  const allInPeriod = vaultTxs().filter(t => state.period && bucketKey(t.ts, state.gran) === state.period);
+  $("spamN").textContent = allInPeriod.filter(t => !isVerified(t)).length;
+  renderTable($("showSpam").checked ? allInPeriod : allInPeriod.filter(isVerified));
+  renderMeta();
+}
+
+function renderKPIs(txs) {
+  const u = state.unit;
+  const inn = d3.sum(txs.filter(t => t.dir === "in"), valueOf), out = d3.sum(txs.filter(t => t.dir === "out"), valueOf);
+  const nIn = txs.filter(t => t.dir === "in").length, nOut = txs.filter(t => t.dir === "out").length;
+  $("kIn").textContent = txs.length ? fmtNum(inn, u) : "–";
+  $("kOut").textContent = txs.length ? fmtNum(out, u) : "–";
+  $("kNet").textContent = txs.length ? fmtNum(inn - out, u) : "–";
+  $("kNet").className = "v " + (inn - out >= 0 ? "in" : "out");
+  $("kInN").textContent = `${nIn} giao dịch`; $("kOutN").textContent = `${nOut} giao dịch`;
+  const cpIn = new Set(txs.filter(t => t.dir === "in").map(t => t.cp)), cpOut = new Set(txs.filter(t => t.dir === "out").map(t => t.cp));
+  $("kCp").textContent = txs.length ? new Set([...cpIn, ...cpOut]).size : "–";
+  $("kCpD").textContent = `${cpIn.size} gửi vào · ${cpOut.size} nhận ra`;
+}
+
+function renderSankey(txs, refMax) {
+  const box = $("sankey"), u = state.unit;
+  $("sankeyTitle").textContent = "Money flow · " + hubName() + (state.period ? " · " + bucketLabel(state.period, state.gran) : "");
+  if (!txs.length) { box.innerHTML = `<div class="empty">${vaultTxs().length ? "Không có giao dịch có giá trị trong kỳ / đơn vị này." : "Chưa có dữ liệu. Nhập API key và bấm “Tải dữ liệu on-chain”, hoặc import CSV."}</div>`; $("legend").innerHTML = ""; return; }
+
+  // gom top N đối tác mỗi phía, phần còn lại vào "Khác"
+  const groupSide = dir => {
+    const byCp = d3.rollup(txs.filter(t => t.dir === dir), v => d3.sum(v, valueOf), t => t.cp);
+    const top = new Set([...byCp].sort((a, b) => b[1] - a[1]).slice(0, state.topN).map(d => d[0]));
+    return cp => top.has(cp) ? cp : "__other";
+  };
+  const gIn = groupSide("in"), gOut = groupSide("out");
+  const nodes = new Map(), links = new Map();
+  const node = (id, name, kind, extra = {}) => { if (!nodes.has(id)) nodes.set(id, { id, name, kind, ...extra }); return id; };
+  const link = (s, t, v, chain) => { const k = s + "|" + t; const l = links.get(k) || { source: s, target: t, value: 0, chain, n: 0 }; l.value += v; l.n++; links.set(k, l); };
+
+  const HUB = node("hub", hubName(), "hub");
+  let totIn = 0, totOut = 0;
+  for (const t of txs) {
+    const v = valueOf(t); if (!(v > 0)) continue;
+    const c = chainById[t.chain] || { name: "Chain " + t.chain };
+    if (t.dir === "in") {
+      const g = gIn(t.cp);
+      const s = node("in:" + g, g === "__other" ? "Nguồn khác" : label(g), "cp", { addr: g });
+      const ch = node("cin:" + t.chain, c.name + " · Inflow", "chain", { chain: t.chain });
+      link(s, ch, v, t.chain); link(ch, HUB, v, t.chain); totIn += v;
+    } else {
+      const g = gOut(t.cp);
+      const d = node("out:" + g, g === "__other" ? "Nơi nhận khác" : label(g), "cp", { addr: g });
+      const ch = node("cout:" + t.chain, c.name + " · Outflow", "chain", { chain: t.chain });
+      link(HUB, ch, v, t.chain); link(ch, d, v, t.chain); totOut += v;
+    }
+  }
+  // cân bằng hub: phần giữ lại / phần chi từ số dư sẵn có
+  if (totIn > totOut && totOut >= 0 && totIn - totOut > 1e-9) link(HUB, node("net", "Giữ lại trong ví (net)", "net"), totIn - totOut, null);
+  if (totOut > totIn) link(node("bal", "Từ số dư đầu kỳ", "net"), HUB, totOut - totIn, null);
+
+  const W = box.clientWidth || 1200;
+  // số node của cột đông nhất (đối tác + node cân bằng), để phần đệm không bị lấp bằng dải
+  const cnt = p => [...nodes.keys()].filter(k => k.startsWith(p)).length;
+  const nCount = Math.max(1, cnt("in:") + cnt("bal"), cnt("out:") + cnt("net"), cnt("cin:"), cnt("cout:"));
+  const M = { t: 28, r: 190, b: 10, l: 190 };
+  const PAD = 26, MAX_BAND = 420;
+  const band = Math.max(4, MAX_BAND * Math.max(totIn, totOut) / refMax);
+  const flowBottom = M.t + band + (nCount - 1) * PAD;          // vùng vẽ đúng bằng độ dày theo tỷ lệ
+  const H = Math.max(120, flowBottom + M.b + 16);               // chừa chỗ cho nhãn hub dưới node
+  const sankey = d3.sankey().nodeId(d => d.id).nodeWidth(12).nodePadding(PAD).nodeSort(null)
+    .extent([[M.l, M.t], [W - M.r, flowBottom]]);
+  const graph = sankey({ nodes: [...nodes.values()].map(d => ({ ...d })), links: [...links.values()].map(d => ({ ...d })) });
+
+  box.innerHTML = "";
+  const svg = d3.select(box).append("svg").attr("viewBox", `0 0 ${W} ${H}`).attr("height", H)
+    .attr("role", "img").attr("aria-label", `Sankey dòng tiền Basal Pay · ${hubName()} theo chain`);
+  const linkColor = l => l.chain ? chainColor(l.chain) : css("--node-neutral");
+  const nodeColor = n => n.kind === "chain" ? chainColor(n.chain) : n.kind === "hub" ? css("--hub") : css("--node-neutral");
+
+  const lg = svg.append("g").attr("fill", "none");
+  const paths = lg.selectAll("path").data(graph.links).join("path")
+    .attr("d", d3.sankeyLinkHorizontal())
+    .attr("stroke", linkColor).attr("stroke-opacity", 0.35)
+    .attr("stroke-width", d => Math.max(1, d.width))
+    .on("mouseenter", function (ev, d) {
+      d3.select(this).attr("stroke-opacity", 0.6);
+      showTip(ev, `<b>${d.source.name}</b> → <b>${d.target.name}</b><br>${fmtNum(d.value, u)}${d.chain ? ` <span class="m">· ${chainById[d.chain]?.name}</span>` : ""}`);
+    })
+    .on("mousemove", moveTip)
+    .on("mouseleave", function () { d3.select(this).attr("stroke-opacity", 0.35); hideTip(); });
+
+  const ng = svg.append("g").selectAll("g").data(graph.nodes).join("g");
+  ng.append("rect").attr("x", d => d.x0).attr("y", d => d.y0)
+    .attr("width", d => d.x1 - d.x0).attr("height", d => Math.max(2, d.y1 - d.y0))
+    .attr("rx", 3).attr("fill", nodeColor)
+    .on("mouseenter", (ev, d) => {
+      paths.attr("stroke-opacity", l => l.source === d || l.target === d ? 0.6 : 0.12);
+      const vin = d3.sum(d.targetLinks, l => l.value), vout = d3.sum(d.sourceLinks, l => l.value);
+      showTip(ev, `<b>${d.name}</b>${d.addr && d.addr !== "__other" ? `<br><span class="m">${d.addr}</span>` : ""}<br>` +
+        (d.kind === "hub" ? `Vào: ${fmtNum(vin, u)}<br>Ra: ${fmtNum(vout, u)}` : fmtNum(Math.max(vin, vout), u)));
+    })
+    .on("mousemove", moveTip)
+    .on("mouseleave", () => { paths.attr("stroke-opacity", 0.35); hideTip(); });
+
+  const mid = W / 2;
+  ng.append("text")
+    .attr("x", d => d.x0 < mid ? d.x0 - 8 : d.x1 + 8)
+    .attr("y", d => (d.y0 + d.y1) / 2).attr("dy", "0.35em")
+    .attr("text-anchor", d => d.x0 < mid ? "end" : "start")
+    .attr("font-size", 12).attr("fill", css("--text-primary"))
+    .text(d => d.name)
+    .append("tspan").attr("fill", css("--text-secondary"))
+    .text(d => "  " + fmtNum(Math.max(d3.sum(d.targetLinks, l => l.value), d3.sum(d.sourceLinks, l => l.value)), u));
+  // nhãn hub và chain nằm giữa → đặt lên trên node để không đè dải
+  ng.filter(d => d.kind === "hub" || d.kind === "chain").select("text")
+    .attr("x", d => (d.x0 + d.x1) / 2).attr("y", d => d.y0 - 10).attr("text-anchor", "middle")
+    .attr("font-weight", d => d.kind === "hub" ? 600 : 500)
+    .attr("paint-order", "stroke").attr("stroke", css("--surface-1")).attr("stroke-width", 4).attr("stroke-linejoin", "round");
+  // tên vault dài → nhãn hub đặt dưới node để không đè nhãn chain ở hai bên
+  ng.filter(d => d.kind === "hub").select("text").attr("y", d => d.y1 + 16);
+
+  const chains = [...new Set(txs.map(t => t.chain))];
+  $("legend").innerHTML = chains.map(c => `<span><i class="swatch" style="background:${chainColor(c)}"></i>${chainById[c]?.name || c}</span>`).join("")
+    + `<span><i class="swatch" style="background:${css("--node-neutral")}"></i>Đối tác / số dư</span>`;
+}
+
+function renderTimeline(valued, keysDesc) {
+  const box = $("timeline");
+  if (!valued.length) { box.innerHTML = `<div class="empty">–</div>`; return; }
+  const gran = state.gran === "all" ? "week" : state.gran;
+  const keys = [...new Set(valued.map(t => bucketKey(t.ts, gran)))].sort();
+  const chains = [...new Set(valued.map(t => t.chain))];
+  const agg = keys.map(k => {
+    const row = { key: k };
+    for (const c of chains) {
+      const v = valued.filter(t => t.chain === c && bucketKey(t.ts, gran) === k);
+      row["in" + c] = d3.sum(v.filter(t => t.dir === "in"), valueOf);
+      row["out" + c] = d3.sum(v.filter(t => t.dir === "out"), valueOf);
+    }
+    return row;
+  });
+  const W = box.clientWidth || 1200, H = 240, M = { t: 10, r: 10, b: 28, l: 64 };
+  const x = d3.scaleBand().domain(keys).range([M.l, W - M.r]).padding(0.2);
+  const maxIn = d3.max(agg, r => d3.sum(chains, c => r["in" + c])) || 1;
+  const maxOut = d3.max(agg, r => d3.sum(chains, c => r["out" + c])) || 1;
+  const y = d3.scaleLinear().domain([-maxOut, maxIn]).nice().range([H - M.b, M.t]);
+  box.innerHTML = "";
+  const svg = d3.select(box).append("svg").attr("viewBox", `0 0 ${W} ${H}`).attr("height", H);
+  svg.append("g").attr("transform", `translate(${M.l},0)`)
+    .call(d3.axisLeft(y).ticks(5).tickSize(-(W - M.l - M.r)).tickFormat(v => fmtNum(Math.abs(v), state.unit).replace(" " + state.unit, "")))
+    .call(g => g.select(".domain").remove())
+    .call(g => g.selectAll("line").attr("stroke", css("--grid")))
+    .call(g => g.selectAll("text").attr("fill", css("--text-muted")).style("font-variant-numeric", "tabular-nums"));
+  const every = Math.ceil(keys.length / Math.max(1, Math.floor((W - M.l) / 80)));
+  svg.append("g").attr("transform", `translate(0,${H - M.b})`)
+    .call(d3.axisBottom(x).tickValues(keys.filter((_, i) => i % every === 0)).tickFormat(k => k.slice(5)).tickSize(0))
+    .call(g => g.select(".domain").remove())
+    .call(g => g.selectAll("text").attr("fill", css("--text-muted")).attr("dy", "1em"));
+  const selectedKey = state.gran === "all" ? null : state.period;
+  const bw = Math.min(x.bandwidth(), 28);
+  const gBars = svg.append("g");
+  for (const r of agg) {
+    const cx = x(r.key) + (x.bandwidth() - bw) / 2;
+    const dim = selectedKey && r.key !== selectedKey ? 0.35 : 1;
+    let up = 0, down = 0;
+    for (const c of chains) {
+      const vi = r["in" + c], vo = r["out" + c];
+      if (vi > 0) { gBars.append("rect").attr("x", cx).attr("width", bw).attr("y", y(up + vi)).attr("height", Math.max(1, y(up) - y(up + vi) - 2))
+        .attr("fill", chainColor(c)).attr("opacity", dim); up += vi; }
+      if (vo > 0) { gBars.append("rect").attr("x", cx).attr("width", bw).attr("y", y(-down) + 2).attr("height", Math.max(1, y(-down - vo) - y(-down) - 2))
+        .attr("fill", chainColor(c)).attr("opacity", dim); down += vo; }
+    }
+  }
+  svg.append("line").attr("x1", M.l).attr("x2", W - M.r).attr("y1", y(0)).attr("y2", y(0)).attr("stroke", css("--axis"));
+  // vùng hover/click lớn hơn cột
+  svg.append("g").selectAll("rect").data(agg).join("rect")
+    .attr("x", d => x(d.key) - x.step() * x.paddingInner() / 2).attr("width", x.step())
+    .attr("y", M.t).attr("height", H - M.t - M.b).attr("fill", "transparent").style("cursor", "pointer")
+    .on("mouseenter", function (ev, d) {
+      d3.select(this).attr("fill", css("--wash"));
+      const u = state.unit;
+      showTip(ev, `<b>${bucketLabel(d.key, gran)}</b><br>` + chains.map(c =>
+        `<i class="swatch" style="background:${chainColor(c)}"></i> ${chainById[c]?.name}: <span class="in">+${fmtNum(d["in" + c], u)}</span> / <span class="out">−${fmtNum(d["out" + c], u)}</span>`).join("<br>"));
+    })
+    .on("mousemove", moveTip)
+    .on("mouseleave", function () { d3.select(this).attr("fill", "transparent"); hideTip(); })
+    .on("click", (ev, d) => {
+      if (state.gran === "all") setGran("week");
+      state.period = d.key; render();
+    });
+}
+
+function renderTable(txs) {
+  const u = state.unit, all = state.vault === "all";
+  if (!txs.length) { $("txTable").innerHTML = `<tr><td class="empty">Không có giao dịch.</td></tr>`; return; }
+  const rows = txs.slice().sort((a, b) => b.ts - a.ts).map(t => {
+    const c = chainById[t.chain]; const d = localDate(t.ts).toISOString().replace("T", " ").slice(0, 16);
+    return `<tr><td>${d}</td>${all ? `<td title="${vaultById[t.vault]?.name}">${vaultById[t.vault]?.short}</td>` : ""}
+      <td><i class="swatch" style="background:${chainColor(t.chain)}"></i> ${c?.name || t.chain}</td>
+      <td class="${t.dir}">${t.dir === "in" ? "IN" : "OUT"}</td>
+      <td title="${t.cp}">${label(t.cp)}${all && isInternal(t) ? ` <span class="note" title="Chuyển giữa hai Central Vault — không tính vào KPI/Sankey ở chế độ gộp">· nội bộ</span>` : ""}</td><td>${t.token}</td>
+      <td class="num">${d3.format(",.4~f")(t.amount)}</td>
+      <td class="num">${t.usd != null ? fmtNum(t.usd, "USD") : "<span class='note' title='Không phải USDT/USDT0 chuẩn — token khác, native hoặc spam / address poisoning'>⚠ không tính</span>"}</td>
+      <td>${c ? `<a href="${c.explorer}/tx/${t.hash}" target="_blank" rel="noopener">${short(t.hash)}</a>` : short(t.hash)}</td></tr>`;
+  }).join("");
+  $("txTable").innerHTML = `<thead><tr><th>Thời gian (UTC+7)</th>${all ? "<th>Vault</th>" : ""}<th>Chain</th><th>Chiều</th><th>Đối tác</th><th>Token</th><th class="num">Số lượng</th><th class="num">USD</th><th>Tx</th></tr></thead><tbody>${rows}</tbody>`;
+}
+
+function renderMeta() {
+  const n = state.txs.length, unpriced = state.txs.filter(t => !isVerified(t)).length;
+  $("dataInfo").textContent = n ? `${n} transfer · cập nhật ${new Date(state.fetchedAt).toLocaleString("vi-VN")}` : "";
+  const p = Object.entries(state.prices).map(([k, v]) => `${k}=$${v}`).join(", ");
+  $("footnote").innerHTML = `Ghi chú phương pháp: gom kỳ theo giờ Việt Nam (UTC+7), tuần bắt đầu Thứ Hai. ` +
+    `Chỉ tính <b>USDT chuẩn</b> theo địa chỉ hợp đồng: BSC <code>0x55d3…7955</code>, Polygon USDT0 <code>0xc213…8e8f</code>, quy 1:1 USD. ${unpriced} transfer khác (token spam giả tên USDT, BNB/POL native, token khác) bị loại khỏi Sankey, KPI và mặc định ẩn khỏi bảng. BSC lấy qua NodeReal, Polygon qua Etherscan API V2. Bỏ qua transfer giá trị 0 (thường là spam/address poisoning) và giao dịch lỗi. ` +
+    `"Giữ lại trong ví" / "Từ số dư đầu kỳ" là phần chênh lệch vào–ra trong kỳ, không phải số dư thực. ` +
+    `Chế độ "Tất cả" gộp ${VAULTS.map(v => v.name).join(" và ")}, bỏ các giao dịch chuyển qua lại giữa hai vault khỏi KPI, Sankey và timeline để không đếm hai lần (bảng vẫn hiện, gắn nhãn "nội bộ").`;
+}
+
+function setGran(g) {
+  state.gran = g;
+  document.querySelectorAll("#granSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.g === g));
+}
+
+// ---------- wiring ----------
+$("vaultList").innerHTML = "Theo dõi: " + VAULTS.map(v => `<b>${v.name}</b> <code>${v.addr}</code>`).join(" · ");
+$("vaultSeg").innerHTML = VAULTS.map(v => `<button data-v="${v.id}">${v.name}</button>`).join("") + `<button data-v="all">Tất cả</button>`;
+$("csvVault").innerHTML = VAULTS.map(v => `<option value="${v.id}">CSV thuộc vault: ${v.name}</option>`).join("");
+if (state.vault !== "all" && !vaultById[state.vault]) state.vault = 1;
+$("apikey").value = window.ETHERSCAN_API_KEY || store.get("apikey", "");
+$("chainBoxes").innerHTML = CHAINS.map(c => `<label><input type="checkbox" id="ch_${c.id}" ${c.on ? "checked" : ""}><i class="swatch" style="background:${chainColor(c.id)}"></i>${c.name}</label>`).join("");
+$("csvChain").innerHTML = CHAINS.map(c => `<option value="${c.id}">CSV thuộc chain: ${c.name}</option>`).join("");
+$("labels").value = Object.entries(state.labels).map(([a, l]) => `${a},${l}`).join("\n");
+$("btnFetch").onclick = runFetch;
+$("btnCsv").onclick = () => $("csvFile").click();
+$("csvFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  $("status").innerHTML = "";
+  try {
+    if (!Object.keys(state.prices).length) await fetchPrices();
+    const rows = assignVault(importCSV(await f.text(), +$("csvChain").value, +$("csvVault").value));
+    // khoá có vault: một giao dịch giữa 2 vault hợp lệ xuất hiện 2 lần (OUT ở vault này, IN ở vault kia)
+    const k = t => [t.vault, t.chain, t.hash, t.dir, t.token, t.amount].join("|");
+    const seen = new Set(state.txs.map(k));
+    const fresh = rows.filter(t => !seen.has(k(t)));
+    setData(state.txs.concat(fresh), Date.now());
+    log(`Import ${f.name}: ${fresh.length} transfer mới (${rows.length - fresh.length} trùng bị bỏ qua).`);
+  } catch (err) { log("Import lỗi: " + err.message, true); }
+  e.target.value = "";
+};
+$("btnExport").onclick = exportCSV;
+$("btnClear").onclick = () => { if (confirm("Xoá toàn bộ dữ liệu đã tải trong trình duyệt?")) { setData([], null); $("status").innerHTML = ""; } };
+$("btnLabels").onclick = () => {
+  state.labels = Object.fromEntries($("labels").value.split("\n").map(l => l.split(",")).filter(p => p.length >= 2 && p[0].trim())
+    .map(([a, ...l]) => [a.trim().toLowerCase(), l.join(",").trim()]));
+  store.set("labels", state.labels); render();
+};
+document.querySelectorAll("#vaultSeg button").forEach(b => b.onclick = () => {
+  state.vault = b.dataset.v === "all" ? "all" : +b.dataset.v; store.set("vault", state.vault); state.period = null; render();
+});
+document.querySelectorAll("#granSeg button").forEach(b => b.onclick = () => { setGran(b.dataset.g); state.period = null; render(); });
+$("periodSel").onchange = e => { state.period = e.target.value; render(); };
+$("unitSel").onchange = e => { state.unit = e.target.value; render(); };
+$("showSpam").onchange = render;
+$("topN").onchange = e => { state.topN = +e.target.value; render(); };
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 150); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+state.txs = assignVault(state.txs); // dữ liệu cũ (1 ví) được gán vault theo from/to
+state.txs.forEach(t => { t.usd = priceUSD(t); }); // áp quy tắc định giá hiện hành cho dữ liệu đã lưu
+render();
+// Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC không cần key, Polygon dùng key trong config.local.js
+const fetched = store.get("vaultsFetched", []);
+if (!state.txs.length || VAULTS.some(v => !fetched.includes(v.addr.toLowerCase()))) {
+  log("Có Central Vault chưa có dữ liệu trong trình duyệt này — đang tự tải…"); runFetch();
+}
+</script>
+<script>
+// Option C: chuyển tab (ghi vào URL hash); vẽ lại khi quay về tab có biểu đồ để lấy đúng chiều rộng
+const tabs = document.querySelectorAll("nav.tabs button");
+function showTab(name) {
+  if (!document.getElementById("tab-" + name)) name = "overview";
+  tabs.forEach(b => b.setAttribute("aria-selected", b.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + name));
+  history.replaceState(null, "", "#" + name);
+  if (name === "overview") render();
+}
+tabs.forEach(b => b.onclick = () => showTab(b.dataset.tab));
+showTab(location.hash.slice(1) || "overview");
+</script>
+</body>
+</html>
