@@ -1132,7 +1132,8 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleRe
   render();
   // Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC dùng NodeReal URL, Polygon dùng Etherscan key — cả hai trong config.local.js
   const fetched = store.get("vaultsFetched", []);
-  if (!state.txs.length || VAULTS.some(v => !fetched.includes(v.addr.toLowerCase()) || !state.txs.some(t => t.vault === v.id))) {
+  // dòng audit không tính: CV1 chỉ có sổ audit mà chưa có dữ liệu API sau mốc cắt thì vẫn phải tải
+  if (!state.txs.length || VAULTS.some(v => !fetched.includes(v.addr.toLowerCase()) || !state.txs.some(t => t.vault === v.id && t.src !== "audit"))) {
     log("Có Central Vault chưa có dữ liệu trong trình duyệt này — đang tự tải…"); runFetch();
   }
 })();
