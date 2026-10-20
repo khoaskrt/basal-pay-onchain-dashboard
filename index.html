@@ -13,6 +13,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="config.local.js" onerror="void 0"></script>
 <script src="cv1_audited.local.js" onerror="void 0"></script>
+<script src="labels.local.js" onerror="void 0"></script>
 <style>
 /* ==========================================================================
    Basal Pay — Dòng tiền on-chain (v2)
@@ -410,7 +411,7 @@ let state = {
   txs: [],                            // bản ghi chuẩn hoá, mỗi bản ghi có trường vault — nạp từ IndexedDB khi khởi động
   prices: store.get("prices", {}),    // giá native hiện tại (USD)
   fetchedAt: store.get("fetchedAt", null),
-  labels: store.get("labels", {}),
+  labels: { ...(window.ADDRESS_LABELS || {}), ...store.get("labels", {}) }, // nhãn mặc định từ labels.local.js + nhãn gõ trong trình duyệt
   balances: store.get("balances", {}), // "vault:chain" → { v, at, err } — số dư USDT on-chain
   gran: "week", period: null, unit: "USD", topN: 8,
 };
