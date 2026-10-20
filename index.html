@@ -109,6 +109,7 @@ code { font: 11px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-2)
 .tbtn:hover { color: var(--ink); border-color: var(--border); }
 .tbtn.primary { background: var(--s1); color: #fff; padding: 8px 14px; font-size: 12.5px; border-radius: 9px; }
 .tbtn:disabled { opacity: .5; cursor: default; }
+.more-row { text-align: center; color: var(--ink-3); padding: 10px 8px; }
 .sec-title { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin: 26px 0 10px; }
 
 /* ---- KPI ---- */
@@ -926,10 +927,15 @@ function renderTimeline(valued, keysDesc) {
     });
 }
 
+// chỉ dựng TABLE_STEP dòng mới nhất mỗi lần — chèn hàng nghìn dòng vào DOM làm mọi lần render/layout chậm
+const TABLE_STEP = 200;
+let tableSorted = [], tableLimit = TABLE_STEP;
 function renderTable(txs) {
   const u = state.unit, all = state.vault === "all";
-  if (!txs.length) { $("txTable").innerHTML = `<tr><td class="empty">Không có giao dịch.</td></tr>`; return; }
-  const rows = txs.slice().sort((a, b) => b.ts - a.ts).map(t => {
+  if (txs) { tableSorted = txs.slice().sort((a, b) => b.ts - a.ts); tableLimit = TABLE_STEP; } // gọi không có txs = "Xem thêm"
+  if (!tableSorted.length) { $("txTable").innerHTML = `<tr><td class="empty">Không có giao dịch.</td></tr>`; return; }
+  const total = tableSorted.length, shown = Math.min(tableLimit, total);
+  const rows = tableSorted.slice(0, shown).map(t => {
     const c = chainById[t.chain]; const d = localDate(t.ts).toISOString().replace("T", " ").slice(0, 16);
     return `<tr><td>${d}</td>${all ? `<td title="${vaultById[t.vault]?.name}">${vaultById[t.vault]?.short}</td>` : ""}
       <td><i class="swatch" style="background:${chainColor(t.chain)}"></i> ${c?.name || t.chain}</td>
@@ -939,7 +945,10 @@ function renderTable(txs) {
       <td class="num">${t.usd != null ? fmtNum(t.usd, "USD") : "<span class='note' title='Không phải USDT/USDT0 chuẩn — token khác, native hoặc spam / address poisoning'>⚠ không tính</span>"}</td>
       <td>${c ? `<a href="${c.explorer}/tx/${t.hash}" target="_blank" rel="noopener">${short(t.hash)}</a>` : short(t.hash)}</td></tr>`;
   }).join("");
-  $("txTable").innerHTML = `<thead><tr><th>Thời gian (UTC+7)</th>${all ? "<th>Vault</th>" : ""}<th>Chain</th><th>Chiều</th><th>Đối tác</th><th>Token</th><th class="num">Số lượng</th><th class="num">USD</th><th>Tx</th></tr></thead><tbody>${rows}</tbody>`;
+  $("txTable").innerHTML = `<thead><tr><th>Thời gian (UTC+7)</th>${all ? "<th>Vault</th>" : ""}<th>Chain</th><th>Chiều</th><th>Đối tác</th><th>Token</th><th class="num">Số lượng</th><th class="num">USD</th><th>Tx</th></tr></thead><tbody>${rows}</tbody>` +
+    (shown < total ? `<tfoot><tr><td colspan="${all ? 9 : 8}" class="more-row">Đang hiện ${d3.format(",")(shown)} / ${d3.format(",")(total)} giao dịch mới nhất ` +
+      `<button class="tbtn" id="tblMore" type="button">Xem thêm ${d3.format(",")(Math.min(TABLE_STEP, total - shown))}</button></td></tr></tfoot>` : "");
+  if (shown < total) $("tblMore").onclick = () => { tableLimit += TABLE_STEP; renderTable(); };
 }
 
 function renderMeta() {
