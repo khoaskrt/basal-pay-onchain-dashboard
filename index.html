@@ -557,11 +557,13 @@ async function runFetch(full = false) {
     const prices = fetchPrices();
     const balances = fetchBalances(key);
     const all = state.txs.filter(t => !chains.some(c => c.id === t.chain)); // giữ dữ liệu của chain không tải lại
+    const failed = new Set();
     const jobs = VAULTS.flatMap(v => chains.map(c => ({ v, c, line: log(`${v.name} · ${c.name}: đang tải…`) })));
     await Promise.all(jobs.map(async ({ v, c, line }) => {
       const ck = v.id + ":" + c.id, tag = `${v.name} · ${c.name}` + (c.id === 56 ? " (NodeReal)" : "");
       const old = state.txs.filter(t => t.vault === v.id && t.chain === c.id && t.src !== "audit");
-      const inc = !full && cursor[ck] != null;
+      // chỉ tải tiếp khi đã có dữ liệu của vault + chain này; cursor mà không có dữ liệu (lưu lỗi trước đây) thì tải lại toàn bộ
+      const inc = !full && cursor[ck] != null && old.length > 0;
       // CV1: dữ liệu API trong cửa sổ audit bị thay bằng dữ liệu audit → chỉ cần tải từ sau block cutoff
       const floor = v.id === 1 && audCut[c.id] ? audCut[c.id].block + 1 : 0;
       const start = Math.max(inc ? cursor[ck] : 0, floor);
@@ -582,13 +584,15 @@ async function runFetch(full = false) {
         line.textContent = inc ? `${tag}: ${rows.length} transfer từ block ${start} (${detail})` : `${tag}: ${rows.length} transfer (${detail})`;
       } catch (e) {
         all.push(...old); // tải lỗi thì giữ dữ liệu cũ của vault + chain này
+        failed.add(v.id);
         line.className = "err";
         line.textContent = `${tag}: lỗi — ${e.message}` + (old.length ? ` (giữ ${old.length} transfer đã tải trước đó)` : "");
       }
     }));
     await Promise.all([prices, balances]);
     store.set("cursor", cursor);
-    store.set("vaultsFetched", VAULTS.map(v => v.addr.toLowerCase()));
+    // vault có chain tải lỗi chưa tính là đã tải → lần mở sau tự tải lại
+    store.set("vaultsFetched", VAULTS.filter(v => !failed.has(v.id)).map(v => v.addr.toLowerCase()));
     setData(all, Date.now());
     log(`Xong sau ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   } finally { setBusy(false); }
@@ -1127,7 +1131,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleRe
   render();
   // Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC dùng NodeReal URL, Polygon dùng Etherscan key — cả hai trong config.local.js
   const fetched = store.get("vaultsFetched", []);
-  if (!state.txs.length || VAULTS.some(v => !fetched.includes(v.addr.toLowerCase()))) {
+  if (!state.txs.length || VAULTS.some(v => !fetched.includes(v.addr.toLowerCase()) || !state.txs.some(t => t.vault === v.id))) {
     log("Có Central Vault chưa có dữ liệu trong trình duyệt này — đang tự tải…"); runFetch();
   }
 })();
