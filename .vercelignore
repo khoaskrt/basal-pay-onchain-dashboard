@@ -1,5 +1,7 @@
-# Không upload key, dữ liệu đối soát nội bộ và công cụ local lên Vercel
-*.local.js
+# Không upload key và công cụ local lên Vercel.
+# cv1_audited.local.js (sổ đối soát CV1) được upload để bản Vercel khớp bản local —
+# chỉ an toàn vì project bật Vercel Authentication cho mọi deployment; tắt bảo vệ thì phải loại file này ra.
+config.local.js
 *.local.json
 *.csv
 set-key.sh
