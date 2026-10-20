@@ -363,7 +363,10 @@ const VERIFIED = {
 };
 // BSC lấy qua NodeReal (URL trong config.local.js) vì Etherscan free không hỗ trợ BSC
 // URL chính + URL dự phòng (key NodeReal thứ hai, hoặc RPC khác hỗ trợ nr_getAssetTransfers) — đặt trong config.local.js, không commit
-const NODEREAL_BSC = [window.NODEREAL_BSC_URL, window.NODEREAL_BSC_URL_BACKUP].filter(Boolean);
+// Không có config.local.js mà trang chạy qua http(s) (bản Vercel) → gọi proxy /api, key nằm trong biến môi trường phía server
+const PROXY = !window.ETHERSCAN_API_KEY && !window.NODEREAL_BSC_URL && /^https?:$/.test(location.protocol);
+const NODEREAL_BSC = PROXY ? ["/api/nodereal"] : [window.NODEREAL_BSC_URL, window.NODEREAL_BSC_URL_BACKUP].filter(Boolean);
+const ES_URL = PROXY ? "/api/etherscan?" : "https://api.etherscan.io/v2/api?";
 const isVerified = t => t.kind === "token" && !!VERIFIED[t.chain + ":" + t.contract];
 
 // Dữ liệu chuẩn đã audit của Central Vault (1) — cv1_audited.local.js, tạo bằng tools/build_cv1_audited.py.
@@ -455,7 +458,7 @@ async function esCall(chainid, params, key) {
   const qs = new URLSearchParams({ chainid, ...params, apikey: key });
   for (let attempt = 0; attempt < 4; attempt++) {
     await esGate();
-    const r = await fetch("https://api.etherscan.io/v2/api?" + qs);
+    const r = await fetch(ES_URL + qs);
     const j = await r.json();
     if (j.status === "1") return j.result;
     if (j.message === "No transactions found" || (Array.isArray(j.result) && j.result.length === 0)) return [];
@@ -525,7 +528,7 @@ function setBusy(on) {
 // Mặc định chỉ tải phần mới kể từ block cuối đã tải (cursor lưu theo vault + chain);
 // full = true hoặc chưa có cursor thì tải lại toàn bộ. Các vault + chain chạy song song, giới hạn tốc độ qua esGate/nrGate.
 async function runFetch(full = false) {
-  const key = window.ETHERSCAN_API_KEY || "";
+  const key = window.ETHERSCAN_API_KEY || (PROXY ? "proxy" : ""); // qua proxy thì server tự gắn key
   const chains = CHAINS.filter(c => c.api !== false && $("ch_" + c.id).checked);
   if ($("btnFetch").disabled) return; // đang tải dở thì bỏ qua
   $("status").innerHTML = ""; setBusy(true);

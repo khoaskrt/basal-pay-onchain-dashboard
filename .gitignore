@@ -8,3 +8,4 @@ config.local.js
 # Dữ liệu đối soát CV1 đã audit (tạo bằng tools/build_cv1_audited.py) — KHÔNG commit
 *.local.js
 *.local.json
+.vercel
