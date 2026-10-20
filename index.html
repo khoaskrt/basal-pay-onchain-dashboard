@@ -391,10 +391,23 @@ const store = {
   get: (k, d) => { try { return JSON.parse(localStorage.getItem("bp_" + k)) ?? d; } catch { return d; } },
   set: (k, v) => localStorage.setItem("bp_" + k, JSON.stringify(v)),
 };
+// Giao dịch lưu trong IndexedDB: không có sổ audit thì lịch sử CV1 từ API vượt hạn mức ~5MB của localStorage
+const idb = (() => {
+  const db = new Promise((ok, fail) => {
+    const r = indexedDB.open("bp", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv");
+    r.onsuccess = () => ok(r.result); r.onerror = () => fail(r.error);
+  });
+  const run = (mode, op) => db.then(d => new Promise((ok, fail) => {
+    const r = op(d.transaction("kv", mode).objectStore("kv"));
+    r.onsuccess = () => ok(r.result); r.onerror = () => fail(r.error);
+  }));
+  return { get: k => run("readonly", s => s.get(k)), set: (k, v) => run("readwrite", s => s.put(v, k)) };
+})();
 
 let state = {
   vault: store.get("vault", 1),       // 1 | 2 | "all"
-  txs: store.get("txs", []),          // bản ghi chuẩn hoá, mỗi bản ghi có trường vault
+  txs: [],                            // bản ghi chuẩn hoá, mỗi bản ghi có trường vault — nạp từ IndexedDB khi khởi động
   prices: store.get("prices", {}),    // giá native hiện tại (USD)
   fetchedAt: store.get("fetchedAt", null),
   labels: store.get("labels", {}),
@@ -688,7 +701,12 @@ function setData(txs, at) {
   txs.forEach(t => { t.usd = priceUSD(t); const v = VERIFIED[t.chain + ":" + t.contract]; if (v) t.token = v; });
   txs = withAudited(txs);
   state.txs = txs; state.fetchedAt = at;
-  store.set("txs", txs.filter(t => t.src !== "audit")); store.set("fetchedAt", at);
+  store.set("fetchedAt", at);
+  // lưu lỗi thì bỏ cursor để lần sau tải lại đầy đủ, tránh tải tiếp trên nền dữ liệu rỗng
+  idb.set("txs", txs.filter(t => t.src !== "audit")).catch(e => {
+    store.set("cursor", {}); store.set("vaultsFetched", []);
+    log(`Không lưu được dữ liệu vào trình duyệt (${e.message}) — lần mở sau sẽ tải lại toàn bộ.`, true);
+  });
   state.period = null; render();
 }
 
@@ -1091,15 +1109,22 @@ $("showSpam").onchange = scheduleRender;
 $("topN").onchange = e => { state.topN = +e.target.value; scheduleRender(); };
 let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 150); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleRender);
-state.txs = assignVault(state.txs); // dữ liệu cũ (1 ví) được gán vault theo from/to
-state.txs.forEach(t => { t.usd = priceUSD(t); }); // áp quy tắc định giá hiện hành cho dữ liệu đã lưu
-state.txs = withAudited(state.txs);
-render();
-// Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC dùng NodeReal URL, Polygon dùng Etherscan key — cả hai trong config.local.js
-const fetched = store.get("vaultsFetched", []);
-if (!state.txs.length || VAULTS.some(v => !fetched.includes(v.addr.toLowerCase()))) {
-  log("Có Central Vault chưa có dữ liệu trong trình duyệt này — đang tự tải…"); runFetch();
-}
+(async () => {
+  // dữ liệu từng lưu trong localStorage (bản trước) được chuyển sang IndexedDB
+  const legacy = store.get("txs", null);
+  let saved = await idb.get("txs").catch(() => null);
+  if (legacy) { saved = saved || legacy; await idb.set("txs", saved).catch(() => {}); localStorage.removeItem("bp_txs"); }
+  if (!saved || !saved.length) store.set("cursor", {}); // không có dữ liệu đã lưu thì cursor cũ vô nghĩa → tải lại toàn bộ
+  state.txs = assignVault(saved || []); // dữ liệu cũ (1 ví) được gán vault theo from/to
+  state.txs.forEach(t => { t.usd = priceUSD(t); }); // áp quy tắc định giá hiện hành cho dữ liệu đã lưu
+  state.txs = withAudited(state.txs);
+  render();
+  // Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC dùng NodeReal URL, Polygon dùng Etherscan key — cả hai trong config.local.js
+  const fetched = store.get("vaultsFetched", []);
+  if (!state.txs.length || VAULTS.some(v => !fetched.includes(v.addr.toLowerCase()))) {
+    log("Có Central Vault chưa có dữ liệu trong trình duyệt này — đang tự tải…"); runFetch();
+  }
+})();
 </script>
 <script>
 // ===================== v2: lớp trình bày theo design system Basal Pay =====================
