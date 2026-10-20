@@ -534,10 +534,16 @@ function log(msg, err) {
   if (err) line.className = "err"; line.textContent = msg; el.appendChild(line);
   return line;
 }
+// Đang tải mà chưa có dữ liệu thì các ô trống báo "đang tải" thay vì "chưa có dữ liệu"
+// (lần đầu CV1 mất ~80s; đóng / tải lại trang giữa chừng thì mất hết phần đã tải)
+const LOADING_TXT = "Đang tải dữ liệu on-chain — lần đầu mất khoảng 1–2 phút, giữ trang mở…";
 function setBusy(on) {
+  state.busy = on;
   $("btnFetch").disabled = on;
   $("reload").disabled = on; $("reload").classList.toggle("spinning", on);
+  scheduleRender();
 }
+addEventListener("beforeunload", e => { if (state.busy) e.preventDefault(); });
 // Mặc định chỉ tải phần mới kể từ block cuối đã tải (cursor lưu theo vault + chain);
 // full = true hoặc chưa có cursor thì tải lại toàn bộ. Các vault + chain chạy song song, giới hạn tốc độ qua esGate/nrGate.
 async function runFetch(full = false) {
@@ -943,7 +949,7 @@ function renderSankey(txs, refMax) {
 
 function renderTimeline(valued, keysDesc) {
   const box = $("timeline");
-  if (!valued.length) { box.innerHTML = `<div class="empty">–</div>`; return; }
+  if (!valued.length) { box.innerHTML = `<div class="empty">${state.busy && !vaultTxs().length ? LOADING_TXT : "–"}</div>`; return; }
   const gran = state.gran === "all" ? "week" : state.gran;
   const keys = [...new Set(valued.map(t => bucketKey(t.ts, gran)))].sort();
   const chains = [...new Set(valued.map(t => t.chain))];
@@ -1011,7 +1017,7 @@ let tableSorted = [], tableLimit = TABLE_STEP;
 function renderTable(txs) {
   const u = state.unit, all = state.vault === "all";
   if (txs) { tableSorted = txs.slice().sort((a, b) => b.ts - a.ts); tableLimit = TABLE_STEP; } // gọi không có txs = "Xem thêm"
-  if (!tableSorted.length) { $("txTable").innerHTML = `<tr><td class="empty">Không có giao dịch.</td></tr>`; return; }
+  if (!tableSorted.length) { $("txTable").innerHTML = `<tr><td class="empty">${state.busy && !vaultTxs().length ? LOADING_TXT : "Không có giao dịch."}</td></tr>`; return; }
   const total = tableSorted.length, shown = Math.min(tableLimit, total);
   const rows = tableSorted.slice(0, shown).map(t => {
     const c = chainById[t.chain]; const d = localDate(t.ts).toISOString().replace("T", " ").slice(0, 16);
@@ -1031,7 +1037,7 @@ function renderTable(txs) {
 
 function renderMeta() {
   const n = state.txs.length, unpriced = state.txs.filter(t => !isVerified(t)).length;
-  $("dataInfo").textContent = n ? `${n} transfer · cập nhật ${new Date(state.fetchedAt).toLocaleString("vi-VN")}` : "";
+  $("dataInfo").textContent = state.busy ? "Đang tải dữ liệu on-chain…" : n ? `${n} transfer · cập nhật ${new Date(state.fetchedAt).toLocaleString("vi-VN")}` : "";
   // gộp các chain cùng mốc cắt: "BSC/Kaia/Plasma tới 02/08 06:59"
   const byCut = d3.groups(Object.entries(audCut), ([, v]) => v.ts).sort((a, b) => a[0] - b[0]);
   const cutTxt = byCut.map(([ts, cs]) => `${cs.map(([c]) => chainById[c]?.name).join("/")} tới ${d3.utcFormat("%d/%m/%Y %H:%M")(localDate(ts))}`).join(" · ");
@@ -1136,7 +1142,7 @@ renderSankey = function (txs, refMax) {
   const box = $("sankey"), u = state.unit;
   $("sankeyTitle").textContent = "Money flow · " + hubName();
   $("sankeySub").textContent = (state.period ? bucketLabel(state.period, state.gran) + " · " : "") + u + " · nguồn tiền → chain → Central Vault → chain → nơi nhận · độ dày dải tỷ lệ với giá trị";
-  if (!txs.length) { box.innerHTML = `<div class="empty">${vaultTxs().length ? "Không có giao dịch có giá trị trong kỳ / đơn vị này." : "Chưa có dữ liệu — bấm “↻ Đồng bộ dữ liệu”."}</div>`; $("legend").innerHTML = ""; return; }
+  if (!txs.length) { box.innerHTML = `<div class="empty">${vaultTxs().length ? "Không có giao dịch có giá trị trong kỳ / đơn vị này." : state.busy ? LOADING_TXT : "Chưa có dữ liệu — bấm “↻ Đồng bộ dữ liệu”."}</div>`; $("legend").innerHTML = ""; return; }
 
   const groupSide = dir => {
     const byCp = d3.rollup(txs.filter(t => t.dir === dir), v => d3.sum(v, valueOf), t => t.cp);
