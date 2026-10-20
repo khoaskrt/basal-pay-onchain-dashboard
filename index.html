@@ -124,6 +124,12 @@ code { font: 11px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-2)
 .kpi .foot { font-size: 11.5px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; margin-top: 1px; flex-wrap: wrap; }
 .spark { height: 28px; margin-top: 6px; }
 .spark svg { display: block; width: 100%; height: 28px; }
+.bal-card { display: flex; flex-direction: column; gap: 2px; }
+.bal-card.sel { background: linear-gradient(150deg, var(--tint) 0%, var(--card) 62%); border-color: var(--s1); }
+.bal-card .val { font-size: 30px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+.bal-card .foot { font-size: 11.5px; color: var(--ink-2); display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; }
+.bal-card .foot.dim { color: var(--ink-3); margin-top: 4px; }
+.bal-card .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
 .up { color: var(--ok-text); font-weight: 700; } .down { color: var(--bad); font-weight: 700; } .flat { color: var(--ink-2); font-weight: 700; }
 .mix { display: flex; height: 8px; border-radius: 99px; overflow: hidden; gap: 2px; background: var(--sunken); margin-bottom: 10px; }
 .mix i { display: block; height: 100%; }
@@ -184,8 +190,8 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
 #tip .t-tot { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 5px; }
 #tip .m { color: var(--ink-3); font-size: 11px; word-break: break-all; }
 
-.c12 { grid-column: span 12; } .c7 { grid-column: span 7; } .c5 { grid-column: span 5; }
-@media (max-width: 1080px) { .hero-card, .kpi-wrap, .c7, .c5 { grid-column: span 12; } }
+.c12 { grid-column: span 12; } .c6 { grid-column: span 6; } .c7 { grid-column: span 7; } .c5 { grid-column: span 5; }
+@media (max-width: 1080px) { .hero-card, .kpi-wrap, .c7, .c6, .c5 { grid-column: span 12; } }
 @media (max-width: 620px) { .kpi-wrap { grid-template-columns: repeat(2, 1fr); } .hero-val { font-size: 38px; } .filters { position: static; } }
 </style>
 </head>
@@ -223,6 +229,9 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
     <div class="fgroup"><span class="flabel">Đơn vị</span><select class="sel" id="unitSel"></select></div>
     <div class="fgroup"><span class="flabel">Top đối tác</span><select class="sel" id="topN"><option>5</option><option selected>8</option><option>12</option><option>20</option></select></div>
   </div>
+
+  <!-- ===== SỐ DƯ ===== -->
+  <div class="grid" id="balRow"></div>
 
   <!-- ===== KPI ===== -->
   <div class="grid">
@@ -386,6 +395,7 @@ let state = {
   prices: store.get("prices", {}),    // giá native hiện tại (USD)
   fetchedAt: store.get("fetchedAt", null),
   labels: store.get("labels", {}),
+  balances: store.get("balances", {}), // "vault:chain" → { v, at, err } — số dư USDT on-chain
   gran: "week", period: null, unit: "USD", topN: 8,
 };
 
@@ -523,6 +533,7 @@ async function runFetch(full = false) {
   try {
     const cursor = store.get("cursor", {});
     const prices = fetchPrices();
+    const balances = fetchBalances(key);
     const all = state.txs.filter(t => !chains.some(c => c.id === t.chain)); // giữ dữ liệu của chain không tải lại
     const jobs = VAULTS.flatMap(v => chains.map(c => ({ v, c, line: log(`${v.name} · ${c.name}: đang tải…`) })));
     await Promise.all(jobs.map(async ({ v, c, line }) => {
@@ -553,12 +564,42 @@ async function runFetch(full = false) {
         line.textContent = `${tag}: lỗi — ${e.message}` + (old.length ? ` (giữ ${old.length} transfer đã tải trước đó)` : "");
       }
     }));
-    await prices;
+    await Promise.all([prices, balances]);
     store.set("cursor", cursor);
     store.set("vaultsFetched", VAULTS.map(v => v.addr.toLowerCase()));
     setData(all, Date.now());
     log(`Xong sau ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   } finally { setBusy(false); }
+}
+// Số dư USDT chuẩn on-chain (balanceOf) — chỉ BSC và Polygon; Kaia/Plasma chưa có nguồn API.
+// decimals đã đối chiếu on-chain ngày 2026-10-20: BSC-USD 18, Polygon USDT0 6.
+const BAL_CHAINS = [{ id: 56, dec: 18 }, { id: 137, dec: 6 }];
+const contractOf = id => Object.keys(VERIFIED).find(k => k.startsWith(id + ":")).split(":")[1];
+const fromUnits = (raw, dec) => { const b = BigInt(raw), d = 10n ** BigInt(dec); return Number(b / d) + Number(b % d) / Number(d); };
+async function fetchBalance(v, c, key, line) {
+  const contract = contractOf(c.id);
+  if (c.id === 56) {
+    if (!NODEREAL_BSC.length) throw new Error("cần NodeReal URL trong config.local.js");
+    const j = await nrCall("eth_call", [{ to: contract, data: "0x70a08231" + v.addr.slice(2).toLowerCase().padStart(64, "0") }, "latest"], line);
+    return fromUnits(j.result, c.dec);
+  }
+  if (!key) throw new Error("cần Etherscan API key trong config.local.js");
+  return fromUnits(await esCall(c.id, { module: "account", action: "tokenbalance", contractaddress: contract, address: v.addr, tag: "latest" }, key), c.dec);
+}
+// Lỗi một vault · chain thì giữ số cũ, gắn cờ lỗi
+async function fetchBalances(key) {
+  const bal = { ...state.balances };
+  await Promise.all(VAULTS.flatMap(v => BAL_CHAINS.map(async c => {
+    const k = v.id + ":" + c.id, tag = `Số dư ${v.short} · ${chainById[c.id].name}`, line = log(`${tag}: đang tải…`);
+    try {
+      bal[k] = { v: await fetchBalance(v, c, key, line), at: Date.now() };
+      line.textContent = `${tag}: ${fmtNum(bal[k].v, "USD")}`;
+    } catch (e) {
+      bal[k] = { ...bal[k], err: true };
+      line.className = "err"; line.textContent = `${tag}: lỗi — ${e.message}`;
+    }
+  })));
+  state.balances = bal; store.set("balances", bal);
 }
 // Gọi NodeReal: lỗi giới hạn tốc độ/mạng thì chuyển sang URL dự phòng, hết URL thì chờ tăng dần rồi thử lại
 async function nrCall(method, params, line) {
@@ -733,6 +774,7 @@ function render() {
   $("unitSel").value = state.unit;
 
   const inPeriod = valued.filter(t => state.period && bucketKey(t.ts, state.gran) === state.period);
+  renderBalances();
   renderKPIs(inPeriod);
   // mốc tỷ lệ chung: tổng vào/ra lớn nhất trong các kỳ cùng độ chi tiết → kỳ nhỏ có dải mỏng
   const perKey = new Map(keys.map(k => [k, { in: 0, out: 0 }])); // gom một lượt thay vì lọc lại toàn bộ cho từng kỳ
@@ -744,6 +786,21 @@ function render() {
   $("spamN").textContent = allInPeriod.filter(t => !isVerified(t)).length;
   renderTable($("showSpam").checked ? allInPeriod : allInPeriod.filter(isVerified));
   renderMeta();
+}
+
+function renderBalances() {
+  const fmtT = at => new Date(at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+  $("balRow").innerHTML = VAULTS.map(v => {
+    const parts = BAL_CHAINS.map(c => ({ c: chainById[c.id], b: state.balances[v.id + ":" + c.id] }));
+    const got = parts.filter(p => p.b?.v != null), at = d3.min(got, p => p.b.at);
+    const sel = state.vault === "all" || state.vault === v.id;
+    return `<div class="card c6 bal-card${sel ? " sel" : ""}">
+      <div class="kpi-lab">Số dư USDT · ${v.name} <code title="${v.addr}">${short(v.addr)}</code></div>
+      <div class="val">${got.length ? fmtNum(d3.sum(got, p => p.b.v), "USD") : "—"}</div>
+      <div class="foot">${parts.map(({ c, b }) => `<span><i class="dot" style="background:${chainColor(c.id)}"></i>${c.name} ${b?.v != null ? fmtNum(b.v, "USD") : "—"}${b?.err ? ` <span class="down" title="Lần tải gần nhất lỗi — đang hiện số cũ">lỗi</span>` : ""}</span>`).join("")}</div>
+      <div class="foot dim">${got.length ? "On-chain lúc " + fmtT(at) : "Chưa có dữ liệu — bấm ↻"} · chưa gồm Kaia/Plasma</div>
+    </div>`;
+  }).join("");
 }
 
 function renderKPIs(txs) {
@@ -964,7 +1021,8 @@ function renderMeta() {
   $("footnote").innerHTML = `Ghi chú phương pháp: gom kỳ theo giờ Việt Nam (UTC+7), tuần bắt đầu Thứ Hai. ` +
     auditTxt +
     `Chỉ tính <b>USDT chuẩn</b> theo địa chỉ hợp đồng: BSC <code>0x55d3…7955</code>, Polygon USDT0 <code>0xc213…8e8f</code>, Kaia <code>0xd077…4fdb</code>, Plasma USDT0 <code>0xb8ce…5ebb</code>, quy 1:1 USD. ${unpriced} transfer khác (token spam giả tên USDT, BNB/POL native, token khác) bị loại khỏi Sankey, KPI và mặc định ẩn khỏi bảng. BSC lấy qua NodeReal, Polygon qua Etherscan API V2. Bỏ qua transfer giá trị 0 (thường là spam/address poisoning) và giao dịch lỗi. ` +
-    `"Giữ lại trong ví" / "Từ số dư đầu kỳ" là phần chênh lệch vào–ra trong kỳ, không phải số dư thực. ` +
+    `Card số dư lấy trực tiếp on-chain (<code>balanceOf</code>) của USDT chuẩn trên BSC và Polygon tại lần tải gần nhất, chưa gồm Kaia/Plasma. ` +
+    `"Giữ lại trong ví" / "Từ số dư đầu kỳ" trong Sankey là phần chênh lệch vào–ra trong kỳ, không phải số dư thực. ` +
     `Chế độ "Tất cả" gộp ${VAULTS.map(v => v.name).join(" và ")}, bỏ các giao dịch chuyển qua lại giữa hai vault khỏi KPI, Sankey và timeline để không đếm hai lần (bảng vẫn hiện, gắn nhãn "nội bộ").`;
 }
 
@@ -1012,7 +1070,7 @@ $("csvFile").onchange = async e => {
   e.target.value = "";
 };
 $("btnExport").onclick = exportCSV;
-$("btnClear").onclick = () => { if (confirm("Xoá toàn bộ dữ liệu đã tải trong trình duyệt?")) { setData([], null); store.set("cursor", {}); $("status").innerHTML = ""; } };
+$("btnClear").onclick = () => { if (confirm("Xoá toàn bộ dữ liệu đã tải trong trình duyệt?")) { state.balances = {}; store.set("balances", {}); setData([], null); store.set("cursor", {}); $("status").innerHTML = ""; } };
 $("btnLabels").onclick = () => {
   state.labels = Object.fromEntries($("labels").value.split("\n").map(l => l.split(",")).filter(p => p.length >= 2 && p[0].trim())
     .map(([a, ...l]) => [a.trim().toLowerCase(), l.join(",").trim()]));
