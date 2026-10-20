@@ -1,0 +1,8 @@
+# Không upload key, dữ liệu đối soát nội bộ và công cụ local lên Vercel
+*.local.js
+*.local.json
+*.csv
+set-key.sh
+tools/
+.claude/
+.DS_Store
