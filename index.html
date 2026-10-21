@@ -86,6 +86,9 @@ code { font: 11px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-2)
 .reload-btn:disabled { cursor: progress; opacity: .7; }
 .reload-btn.spinning svg { animation: bp-spin .9s linear infinite; }
 @keyframes bp-spin { to { transform: rotate(360deg); } }
+.account { display: inline-flex; align-items: center; gap: 6px; }
+.account[hidden] { display: none; }
+.account .who { font-size: 11.5px; color: var(--ink-2); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .reload-btn.spinning svg { animation-duration: 2.4s; } }
 
 /* ---- filter row ---- */
@@ -215,6 +218,10 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
       <button class="theme-btn reload-btn" id="reload" type="button" title="Tải giao dịch mới nhất" aria-label="Tải giao dịch mới nhất">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
       </button>
+      <span class="account" id="account" hidden>
+        <span class="who" id="accountName"></span>
+        <button class="theme-btn" id="logout" type="button" title="Xoá phiên Vercel trên dashboard. Nếu trình duyệt còn đăng nhập vercel.com, Vercel sẽ đăng nhập lại ngay — muốn ra hẳn thì đăng xuất cả vercel.com">Đăng xuất</button>
+      </span>
     </div>
   </div>
 
@@ -1207,6 +1214,13 @@ $("theme").onclick = () => {
   scheduleRender();
 };
 $("showSpam").onchange = scheduleRender;
+// tài khoản Vercel Authentication — chỉ có ở bản Vercel; chạy local không có /api nên cụm này ẩn
+$("logout").onclick = () => { location.href = "/api/logout"; };
+fetch("/api/me", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(me => {
+  if (!me?.signedIn) return;
+  $("accountName").textContent = me.name || "Đã đăng nhập qua Vercel";
+  $("account").hidden = false;
+}).catch(() => {});
 document.fonts?.ready.then(render); // đo lại nhãn khi font Plus Jakarta Sans tải xong
 render();
 </script>
