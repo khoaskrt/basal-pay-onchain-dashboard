@@ -130,11 +130,19 @@ code { font: 11px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-2)
 .spark { height: 28px; margin-top: 6px; }
 .spark svg { display: block; width: 100%; height: 28px; }
 .bal-card { display: flex; flex-direction: column; gap: 2px; }
-.bal-card.sel { background: linear-gradient(150deg, var(--tint) 0%, var(--card) 62%); border-color: var(--s1); }
 .bal-card .val { font-size: 30px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
 .bal-card .foot { font-size: 11.5px; color: var(--ink-2); display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; }
 .bal-card .foot.dim { color: var(--ink-3); margin-top: 4px; }
 .bal-card .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+/* ---- tab ---- */
+.tabs { display: inline-flex; margin-bottom: 16px; }
+.tabs button[aria-selected="true"] { background: var(--card); color: var(--s1); box-shadow: 0 1px 2px rgba(10,11,15,.10); }
+.tabs button:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+#balTable th.grp { text-align: center; border-bottom: 0; }
+#balTable td.sub, #balTable th.sub { border-left: 1px solid var(--line); }
+#balTable tfoot td { font-weight: 700; border-bottom: 0; }
+#balTable .nat { color: var(--ink-2); }
+#balTable a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
 .up { color: var(--ok-text); font-weight: 700; } .down { color: var(--bad); font-weight: 700; } .flat { color: var(--ink-2); font-weight: 700; }
 .mix { display: flex; height: 8px; border-radius: 99px; overflow: hidden; gap: 2px; background: var(--sunken); margin-bottom: 10px; }
 .mix i { display: block; height: 100%; }
@@ -225,6 +233,25 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
     </div>
   </div>
 
+  <div class="seg tabs" id="tabSeg" role="tablist" aria-label="Chọn trang">
+    <button type="button" role="tab" data-tab="flow" aria-controls="tab-flow" aria-selected="true">Dòng tiền</button>
+    <button type="button" role="tab" data-tab="balance" aria-controls="tab-balance" aria-selected="false">Số dư</button>
+  </div>
+
+  <!-- ===== TAB SỐ DƯ ===== -->
+  <section id="tab-balance" role="tabpanel" hidden>
+    <div class="grid" id="balRow"></div>
+    <div class="grid">
+      <div class="card c12">
+        <header><div><h2>Số dư theo chain</h2></div></header>
+        <p class="sub" id="balSub">USDT chuẩn (balanceOf) và native dùng trả phí gas · bấm số dư để mở ví trên block explorer</p>
+        <div class="tablebox always"><table id="balTable"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== TAB DÒNG TIỀN ===== -->
+  <section id="tab-flow" role="tabpanel">
   <div class="filters">
     <div class="fgroup"><span class="flabel">Vault</span><div class="seg" id="vaultSeg" role="group" aria-label="Chọn Central Vault"></div></div>
     <div class="fgroup"><span class="flabel">Kỳ</span>
@@ -238,9 +265,6 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
     <div class="fgroup"><span class="flabel">Đơn vị</span><select class="sel" id="unitSel"></select></div>
     <div class="fgroup"><span class="flabel">Top đối tác</span><select class="sel" id="topN"><option>5</option><option selected>8</option><option>12</option><option>20</option></select></div>
   </div>
-
-  <!-- ===== SỐ DƯ ===== -->
-  <div class="grid" id="balRow"></div>
 
   <!-- ===== KPI ===== -->
   <div class="grid">
@@ -301,7 +325,9 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
     </div>
   </div>
 
-  <!-- ===== NGUỒN DỮ LIỆU ===== -->
+  </section>
+
+  <!-- ===== NGUỒN DỮ LIỆU (chung cho hai tab) ===== -->
   <div class="sec-title" id="data">Nguồn dữ liệu & phương pháp</div>
   <div class="grid">
     <div class="card c7">
@@ -395,7 +421,8 @@ let state = {
   prices: store.get("prices", {}),    // giá native hiện tại (USD)
   fetchedAt: store.get("fetchedAt", null),
   labels: { ...(window.ADDRESS_LABELS || {}), ...store.get("labels", {}) }, // nhãn mặc định từ labels.local.js + nhãn gõ trong trình duyệt
-  balances: store.get("balances", {}), // "vault:chain" → { v, at, err } — số dư USDT on-chain
+  balances: store.get("balances", {}), // "vault:chain" → { v: USDT, nat: native, at, err } — số dư on-chain
+  tab: store.get("tab", "flow"),      // "flow" | "balance"
   gran: "week", period: null, unit: "USD", topN: 8,
 };
 
@@ -412,6 +439,7 @@ const fmtNum = (v, unit) => {
   const s = abs >= 1e6 ? d3.format(".2~s")(v).replace("G","B") : abs >= 1000 ? d3.format(",.0f")(v) : d3.format(",.2f")(v);
   return unit === "USD" ? (v < 0 ? "−$" + s.replace("-", "") : "$" + s) : s + " " + unit;
 };
+const fmtNat = (v, chain) => d3.format(",.4~f")(v) + " " + chainById[chain].native; // số dư native (gas) theo đơn vị của chain
 const localDate = ts => new Date((ts + TZ_OFFSET_H * 3600) * 1000); // dùng getUTC* trên kết quả
 const bucketCache = {}; // gran → Map(ts → khoá kỳ); tạo Date cho mỗi lần gọi rất tốn khi render
 function bucketKey(ts, gran) {
@@ -517,14 +545,16 @@ async function fetchBalances() {
   await Promise.all(VAULTS.flatMap(v => BAL_CHAINS.map(async c => {
     const k = v.id + ":" + c.id, tag = `Số dư ${v.short} · ${chainById[c.id].name}`, line = log(`${tag}: đang tải…`);
     try {
-      bal[k] = { v: await api.fetchBalance(v, c.id, msg => line.textContent += " · " + msg), at: Date.now() };
-      line.textContent = `${tag}: ${fmtNum(bal[k].v, "USD")}`;
+      const b = await api.fetchBalance(v, c.id, msg => line.textContent += " · " + msg);
+      bal[k] = { v: b.usdt, nat: b.native, at: Date.now() };
+      line.textContent = `${tag}: ${fmtNum(b.usdt, "USD")} · ${fmtNat(b.native, c.id)}`;
     } catch (e) {
       bal[k] = { ...bal[k], err: true };
       line.className = "err"; line.textContent = `${tag}: lỗi — ${e.message}`;
     }
   })));
   state.balances = bal; store.set("balances", bal);
+  renderBalances(); // hiện ngay, không chờ lượt tải giao dịch (BSC qua NodeReal có thể mất vài phút)
 }
 
 // ---------- bản Vercel: dữ liệu dùng chung ở server ----------
@@ -685,19 +715,38 @@ function render() {
   renderMeta();
 }
 
+// Tab Số dư: card tổng USDT mỗi vault + bảng chain × vault (USDT và native gas)
 function renderBalances() {
   const fmtT = at => new Date(at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+  const errTag = b => b?.err ? ` <span class="down" title="Lần tải gần nhất lỗi — đang hiện số cũ">lỗi</span>` : "";
+  const bal = (v, c) => state.balances[v.id + ":" + c.id];
   $("balRow").innerHTML = VAULTS.map(v => {
-    const parts = BAL_CHAINS.map(c => ({ c: chainById[c.id], b: state.balances[v.id + ":" + c.id] }));
+    const parts = BAL_CHAINS.map(c => ({ c: chainById[c.id], b: bal(v, c) }));
     const got = parts.filter(p => p.b?.v != null), at = d3.min(got, p => p.b.at);
-    const sel = state.vault === "all" || state.vault === v.id;
-    return `<div class="card c6 bal-card${sel ? " sel" : ""}">
+    return `<div class="card c6 bal-card">
       <div class="kpi-lab">Số dư USDT · ${v.name} <code title="${v.addr}">${short(v.addr)}</code></div>
       <div class="val">${got.length ? fmtNum(d3.sum(got, p => p.b.v), "USD") : "—"}</div>
-      <div class="foot">${parts.map(({ c, b }) => `<span><i class="dot" style="background:${chainColor(c.id)}"></i>${c.name} ${b?.v != null ? fmtNum(b.v, "USD") : "—"}${b?.err ? ` <span class="down" title="Lần tải gần nhất lỗi — đang hiện số cũ">lỗi</span>` : ""}</span>`).join("")}</div>
-      <div class="foot dim">${got.length ? "On-chain lúc " + fmtT(at) : "Chưa có dữ liệu — bấm ↻"} · chưa gồm Kaia/Plasma</div>
+      <div class="foot">${parts.map(({ c, b }) => `<span><i class="dot" style="background:${chainColor(c.id)}"></i>${c.name} ${b?.v != null ? fmtNum(b.v, "USD") : "—"}${errTag(b)}</span>`).join("")}</div>
+      <div class="foot dim">${got.length ? "On-chain lúc " + fmtT(at) : "Chưa có dữ liệu — bấm ↻"}</div>
     </div>`;
   }).join("");
+
+  // số USDT để đối chiếu nên hiện đủ 2 chữ số thập phân, không rút gọn kiểu $1.2M
+  const usd = d3.format(",.2f");
+  const cell = (v, c) => {
+    const b = bal(v, c), ch = chainById[c.id], url = `${ch.explorer}/address/${v.addr}`, p = state.prices[ch.cg];
+    const u = b?.v != null ? `<a href="${url}" target="_blank" rel="noopener">$${usd(b.v)}</a>${errTag(b)}` : "—";
+    const n = b?.nat != null ? `<span title="${p ? "≈ $" + usd(b.nat * p) : "Chưa có giá"}">${fmtNat(b.nat, c.id)}</span>` : "—";
+    return `<td class="num sub">${u}</td><td class="num nat">${n}</td>`;
+  };
+  const rows = BAL_CHAINS.map(c => `<tr><td><i class="swatch" style="background:${chainColor(c.id)}"></i> ${chainById[c.id].name}</td>${VAULTS.map(v => cell(v, c)).join("")}</tr>`).join("");
+  const tot = VAULTS.map(v => {
+    const got = BAL_CHAINS.map(c => bal(v, c)?.v).filter(x => x != null);
+    return `<td class="num sub">${got.length ? "$" + usd(d3.sum(got)) : "—"}</td><td></td>`;
+  }).join("");
+  $("balTable").innerHTML = `<thead><tr><th rowspan="2">Chain</th>${VAULTS.map(v => `<th colspan="2" class="grp sub" title="${v.addr}">${v.name}</th>`).join("")}</tr>
+    <tr>${VAULTS.map(() => `<th class="num sub">USDT</th><th class="num">Native (gas)</th>`).join("")}</tr></thead>
+    <tbody>${rows}</tbody><tfoot><tr><td>Tổng USDT</td>${tot}</tr></tfoot>`;
 }
 
 function renderKPIs(txs) {
@@ -918,7 +967,7 @@ function renderMeta() {
   $("footnote").innerHTML = `Ghi chú phương pháp: gom kỳ theo giờ Việt Nam (UTC+7), tuần bắt đầu Thứ Hai. ` +
     auditTxt +
     `Chỉ tính <b>USDT chuẩn</b> theo địa chỉ hợp đồng: BSC <code>0x55d3…7955</code>, Polygon USDT0 <code>0xc213…8e8f</code>, Kaia <code>0xd077…4fdb</code>, Plasma USDT0 <code>0xb8ce…5ebb</code>, quy 1:1 USD. ${unpriced} transfer khác (token spam giả tên USDT, BNB/POL native, token khác) bị loại khỏi Sankey, KPI và mặc định ẩn khỏi bảng. BSC lấy qua NodeReal, Polygon qua Etherscan API V2. Bỏ qua transfer giá trị 0 (thường là spam/address poisoning) và giao dịch lỗi. ` +
-    `Card số dư lấy trực tiếp on-chain (<code>balanceOf</code>) của USDT chuẩn trên BSC và Polygon tại lần tải gần nhất, chưa gồm Kaia/Plasma. ` +
+    `Tab Số dư lấy trực tiếp on-chain tại lần tải gần nhất: USDT chuẩn (<code>balanceOf</code>) và số dư native dùng trả gas trên BSC, Polygon, Kaia, Plasma; Kaia và Plasma qua RPC công khai của từng chain. ` +
     `"Giữ lại trong ví" / "Từ số dư đầu kỳ" trong Sankey là phần chênh lệch vào–ra trong kỳ, không phải số dư thực. ` +
     `Chế độ "Tất cả" gộp ${VAULTS.map(v => v.name).join(" và ")}, bỏ các giao dịch chuyển qua lại giữa hai vault khỏi KPI, Sankey và timeline để không đếm hai lần (bảng vẫn hiện, gắn nhãn "nội bộ").`;
 }
@@ -1205,6 +1254,16 @@ document.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => {
   b.textContent = on ? "Biểu đồ" : "Bảng";
 });
 $("goData").onclick = () => $("data").scrollIntoView({ behavior: "smooth" });
+// Tab Dòng tiền / Số dư — nhớ tab đang mở, link #balance mở thẳng tab Số dư
+function setTab(t) {
+  state.tab = t; store.set("tab", t);
+  document.querySelectorAll("#tabSeg button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
+  $("tab-flow").hidden = t !== "flow"; $("tab-balance").hidden = t !== "balance";
+  history.replaceState(null, "", t === "balance" ? "#balance" : location.pathname + location.search);
+  if (t === "flow") scheduleRender(); // Sankey / timeline đo theo chiều rộng thật — vẽ lại khi tab hiện ra
+}
+document.querySelectorAll("#tabSeg button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
+setTab(location.hash === "#balance" ? "balance" : location.hash === "#flow" ? "flow" : state.tab);
 $("theme").onclick = () => {
   const cur = document.documentElement.getAttribute("data-theme");
   const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;

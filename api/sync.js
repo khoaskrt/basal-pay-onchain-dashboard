@@ -62,7 +62,7 @@ module.exports = async (req, res) => {
     // Lỗi một vault · chain thì giữ số cũ, gắn cờ lỗi
     await Promise.all(Onchain.VAULTS.flatMap(v => Onchain.BAL_CHAINS.map(async c => {
       const k = v.id + ":" + c.id;
-      try { data.balances[k] = { v: await api.fetchBalance(v, c.id, () => {}), at: Date.now() }; }
+      try { const b = await api.fetchBalance(v, c.id, () => {}); data.balances[k] = { v: b.usdt, nat: b.native, at: Date.now() }; }
       catch (e) { data.balances[k] = { ...data.balances[k], err: true }; }
     })));
     data.txs.sort((a, b) => a.ts - b.ts);

@@ -31,9 +31,13 @@ const VERIFIED = {
   "8217:0xd077a400968890eacc75cdc901f0356c943e4fdb": "USDT", // Tether USD trên Kaia (theo sổ đối soát)
   "9745:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb": "USDT0", // USDT0 trên Plasma (theo sổ đối soát)
 };
-// Số dư USDT chuẩn on-chain (balanceOf) — chỉ BSC và Polygon; Kaia/Plasma chưa có nguồn API.
-// decimals đã đối chiếu on-chain ngày 2026-10-20: BSC-USD 18, Polygon USDT0 6.
-const BAL_CHAINS = [{ id: 56, dec: 18 }, { id: 137, dec: 6 }];
+// Số dư on-chain: USDT chuẩn (balanceOf) + native (gas). BSC qua NodeReal, Polygon qua Etherscan,
+// Kaia/Plasma qua RPC công khai (chỉ số dư — giao dịch vẫn lấy từ sổ audit).
+// decimals USDT đã đối chiếu on-chain: BSC-USD 18, Polygon USDT0 6 (2026-10-20); Kaia USDT 6, Plasma USDT0 6 (2026-10-21). Native luôn 18.
+const BAL_CHAINS = [
+  { id: 56, dec: 18 }, { id: 137, dec: 6 },
+  { id: 8217, dec: 6, rpc: "https://public-en.node.kaia.io" }, { id: 9745, dec: 6, rpc: "https://rpc.plasma.to" },
+];
 const contractOf = id => Object.keys(VERIFIED).find(k => k.startsWith(id + ":")).split(":")[1];
 const fromUnits = (raw, dec) => { const b = BigInt(raw), d = 10n ** BigInt(dec); return Number(b / d) + Number(b % d) / Number(d); };
 
@@ -194,18 +198,39 @@ function create({ esUrl = "https://api.etherscan.io/v2/api?", esKey = "", nrUrls
     return { rows, detail, cursor: rows.reduce((m, t) => Math.max(m, t.block), Math.max(start, scanned)) };
   }
 
-  async function fetchBalance(v, chainid, note) {
-    const c = BAL_CHAINS.find(b => b.id === chainid), contract = contractOf(chainid);
-    if (chainid === 56) {
-      if (!nrUrls.length) throw new Error("cần NodeReal URL trong config.local.js");
-      const j = await nrCall("eth_call", [{ to: contract, data: "0x70a08231" + v.addr.slice(2).toLowerCase().padStart(64, "0") }, "latest"], note);
-      return fromUnits(j.result, c.dec);
+  // JSON-RPC công khai (Kaia, Plasma): lỗi mạng / HTTP thì thử lại tối đa 2 lần
+  async function rpcCall(url, method, params) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+        const j = await r.json().catch(() => ({ error: { message: `HTTP ${r.status}` } }));
+        if (j.error) throw new Error(j.error.message);
+        return j.result;
+      } catch (e) { if (attempt === 2) throw e; await sleep(1500); }
     }
-    if (!esKey) throw new Error("cần Etherscan API key trong config.local.js");
-    return fromUnits(await esCall(chainid, { module: "account", action: "tokenbalance", contractaddress: contract, address: v.addr, tag: "latest" }), c.dec);
   }
 
-  return { esCall, esAll, nrCall, fetchNodeReal, fetchRange, fetchBalance };
+  // Trả về { usdt, native } của một vault trên một chain
+  async function fetchBalance(v, chainid, note) {
+    const c = BAL_CHAINS.find(b => b.id === chainid), contract = contractOf(chainid);
+    const call = [{ to: contract, data: "0x70a08231" + v.addr.slice(2).toLowerCase().padStart(64, "0") }, "latest"];
+    let usdt, native;
+    if (c.rpc) {
+      [usdt, native] = await Promise.all([rpcCall(c.rpc, "eth_call", call), rpcCall(c.rpc, "eth_getBalance", [v.addr, "latest"])]);
+    } else if (chainid === 56) {
+      if (!nrUrls.length) throw new Error("cần NodeReal URL trong config.local.js");
+      [usdt, native] = (await Promise.all([nrCall("eth_call", call, note), nrCall("eth_getBalance", [v.addr, "latest"], note)])).map(j => j.result);
+    } else {
+      if (!esKey) throw new Error("cần Etherscan API key trong config.local.js");
+      [usdt, native] = await Promise.all([
+        esCall(chainid, { module: "account", action: "tokenbalance", contractaddress: contract, address: v.addr, tag: "latest" }),
+        esCall(chainid, { module: "account", action: "balance", address: v.addr, tag: "latest" }),
+      ]);
+    }
+    return { usdt: fromUnits(usdt, c.dec), native: fromUnits(native, 18) };
+  }
+
+  return { esCall, esAll, nrCall, rpcCall, fetchNodeReal, fetchRange, fetchBalance };
 }
 
 return { VAULTS, CHAINS, chainById, VERIFIED, BAL_CHAINS, normalize, create };
