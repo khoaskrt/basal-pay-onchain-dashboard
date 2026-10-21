@@ -190,7 +190,6 @@ textarea { max-width: none; min-height: 90px; font: 12px ui-monospace, Menlo, mo
 #status:empty::before { content: "Chưa có tác vụ đồng bộ."; color: var(--ink-3); }
 #status .err { color: var(--bad); }
 details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
-#footnote { font-size: 12px; color: var(--ink-2); line-height: 1.7; margin: 0; }
 
 /* ---- tooltip ---- */
 #tip { position: fixed; z-index: 100; pointer-events: none; opacity: 0; transition: opacity .09s; background: var(--card); color: var(--ink); border: 1px solid var(--border);
@@ -236,6 +235,7 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
   <div class="seg tabs" id="tabSeg" role="tablist" aria-label="Chọn trang">
     <button type="button" role="tab" data-tab="flow" aria-controls="tab-flow" aria-selected="true">Dòng tiền</button>
     <button type="button" role="tab" data-tab="balance" aria-controls="tab-balance" aria-selected="false">Số dư</button>
+    <button type="button" role="tab" data-tab="settings" aria-controls="tab-settings" aria-selected="false">Cài đặt</button>
   </div>
 
   <!-- ===== TAB SỐ DƯ ===== -->
@@ -327,7 +327,8 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
 
   </section>
 
-  <!-- ===== NGUỒN DỮ LIỆU (chung cho hai tab) ===== -->
+  <!-- ===== TAB CÀI ĐẶT ===== -->
+  <section id="tab-settings" role="tabpanel" hidden>
   <div class="sec-title" id="data">Nguồn dữ liệu & phương pháp</div>
   <div class="grid">
     <div class="card c7">
@@ -355,11 +356,8 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
         <button class="tbtn" id="btnLabels" type="button" style="margin-top:8px">Lưu nhãn</button>
       </details>
     </div>
-    <div class="card c12">
-      <header><div><h2>Ghi chú phương pháp</h2></div></header>
-      <p id="footnote"></p>
-    </div>
   </div>
+  </section>
 
 </div>
 <div id="tip" role="tooltip" aria-hidden="true"></div>
@@ -422,7 +420,7 @@ let state = {
   fetchedAt: store.get("fetchedAt", null),
   labels: { ...(window.ADDRESS_LABELS || {}), ...store.get("labels", {}) }, // nhãn mặc định từ labels.local.js + nhãn gõ trong trình duyệt
   balances: store.get("balances", {}), // "vault:chain" → { v: USDT, nat: native, at, err } — số dư on-chain
-  tab: store.get("tab", "flow"),      // "flow" | "balance"
+  tab: store.get("tab", "flow"),      // "flow" | "balance" | "settings"
   gran: "week", period: null, unit: "USD", topN: 8,
 };
 
@@ -955,21 +953,8 @@ function renderTable(txs) {
 }
 
 function renderMeta() {
-  const n = state.txs.length, unpriced = state.txs.filter(t => !isVerified(t)).length;
+  const n = state.txs.length;
   $("dataInfo").textContent = state.busy ? "Đang tải dữ liệu on-chain…" : n ? `${n} transfer · cập nhật ${new Date(state.fetchedAt).toLocaleString("vi-VN")}` : "";
-  // gộp các chain cùng mốc cắt: "BSC/Kaia/Plasma tới 02/08 06:59"
-  const byCut = d3.groups(Object.entries(audCut), ([, v]) => v.ts).sort((a, b) => a[0] - b[0]);
-  const cutTxt = byCut.map(([ts, cs]) => `${cs.map(([c]) => chainById[c]?.name).join("/")} tới ${d3.utcFormat("%d/%m/%Y %H:%M")(localDate(ts))}`).join(" · ");
-  const auditTxt = AUD
-    ? `${vaultById[1].short} dùng số liệu đã đối soát: ${cutTxt} (UTC+7); giao dịch sau mốc lấy từ API, gắn nhãn "chưa audit". `
-    : `${vaultById[1].short} chưa nạp sổ đối soát — đang dùng dữ liệu API. `;
-  const p = Object.entries(state.prices).map(([k, v]) => `${k}=$${v}`).join(", ");
-  $("footnote").innerHTML = `Ghi chú phương pháp: gom kỳ theo giờ Việt Nam (UTC+7), tuần bắt đầu Thứ Hai. ` +
-    auditTxt +
-    `Chỉ tính <b>USDT chuẩn</b> theo địa chỉ hợp đồng: BSC <code>0x55d3…7955</code>, Polygon USDT0 <code>0xc213…8e8f</code>, Kaia <code>0xd077…4fdb</code>, Plasma USDT0 <code>0xb8ce…5ebb</code>, quy 1:1 USD. ${unpriced} transfer khác (token spam giả tên USDT, BNB/POL native, token khác) bị loại khỏi Sankey, KPI và mặc định ẩn khỏi bảng. BSC lấy qua NodeReal, Polygon qua Etherscan API V2. Bỏ qua transfer giá trị 0 (thường là spam/address poisoning) và giao dịch lỗi. ` +
-    `Tab Số dư lấy trực tiếp on-chain tại lần tải gần nhất: USDT chuẩn (<code>balanceOf</code>) và số dư native dùng trả gas trên BSC, Polygon, Kaia, Plasma; Kaia và Plasma qua RPC công khai của từng chain. ` +
-    `"Giữ lại trong ví" / "Từ số dư đầu kỳ" trong Sankey là phần chênh lệch vào–ra trong kỳ, không phải số dư thực. ` +
-    `Chế độ "Tất cả" gộp ${VAULTS.map(v => v.name).join(" và ")}, bỏ các giao dịch chuyển qua lại giữa hai vault khỏi KPI, Sankey và timeline để không đếm hai lần (bảng vẫn hiện, gắn nhãn "nội bộ").`;
 }
 
 function setGran(g) {
@@ -1253,17 +1238,19 @@ document.querySelectorAll("[data-toggle]").forEach(b => b.onclick = () => {
   const card = $(b.dataset.toggle), on = card.classList.toggle("showtable");
   b.textContent = on ? "Biểu đồ" : "Bảng";
 });
-$("goData").onclick = () => $("data").scrollIntoView({ behavior: "smooth" });
-// Tab Dòng tiền / Số dư — nhớ tab đang mở, link #balance mở thẳng tab Số dư
+$("goData").onclick = () => setTab("settings");
+// Tab Dòng tiền / Số dư / Cài đặt — nhớ tab đang mở, link #balance / #settings mở thẳng tab tương ứng
+const TABS = ["flow", "balance", "settings"];
 function setTab(t) {
   state.tab = t; store.set("tab", t);
   document.querySelectorAll("#tabSeg button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
-  $("tab-flow").hidden = t !== "flow"; $("tab-balance").hidden = t !== "balance";
-  history.replaceState(null, "", t === "balance" ? "#balance" : location.pathname + location.search);
+  TABS.forEach(k => { $("tab-" + k).hidden = t !== k; });
+  history.replaceState(null, "", t === "flow" ? location.pathname + location.search : "#" + t);
   if (t === "flow") scheduleRender(); // Sankey / timeline đo theo chiều rộng thật — vẽ lại khi tab hiện ra
 }
 document.querySelectorAll("#tabSeg button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
-setTab(location.hash === "#balance" ? "balance" : location.hash === "#flow" ? "flow" : state.tab);
+const hashTab = location.hash.slice(1);
+setTab(TABS.includes(hashTab) ? hashTab : TABS.includes(state.tab) ? state.tab : "flow");
 $("theme").onclick = () => {
   const cur = document.documentElement.getAttribute("data-theme");
   const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
