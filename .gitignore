@@ -9,3 +9,5 @@ config.local.js
 *.local.js
 *.local.json
 .vercel
+.env*
+node_modules/

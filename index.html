@@ -14,6 +14,7 @@
 <script src="config.local.js" onerror="void 0"></script>
 <script src="cv1_audited.local.js" onerror="void 0"></script>
 <script src="labels.local.js" onerror="void 0"></script>
+<script src="onchain.js"></script>
 <style>
 /* ==========================================================================
    Basal Pay — Dòng tiền on-chain (v2)
@@ -331,43 +332,18 @@ details summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: v
 <div id="tip" role="tooltip" aria-hidden="true"></div>
 
 <script>
-// Các ví Central Vault của Basal Pay. Giao dịch giữa các vault là chuyển nội bộ.
-const VAULTS = [
-  { id: 1, name: "Central Vault (1)", short: "CV1", addr: "0xb8ED09af8cFE40A4AD9Bd44513817Ab476BCf853" },
-  { id: 2, name: "Central Vault (2)", short: "CV2", addr: "0x9E0aF3f1ee72D5D576e402d952EAed228e361D4B" },
-];
+// Cấu hình vault / chain / USDT chuẩn và logic tải on-chain nằm trong onchain.js (dùng chung với server api/sync.js)
+const { VAULTS, CHAINS, chainById, VERIFIED, BAL_CHAINS } = Onchain;
 const vaultById = Object.fromEntries(VAULTS.map(v => [v.id, v]));
 const vaultOfAddr = Object.fromEntries(VAULTS.map(v => [v.addr.toLowerCase(), v.id]));
 const isInternal = t => vaultOfAddr[t.cp] != null; // đối tác là một vault khác
 const TZ_OFFSET_H = 7; // gom ngày/tuần theo giờ Việt Nam (UTC+7)
 
-// Màu theo chain cố định (màu đi theo thực thể, không theo thứ hạng)
-const CHAINS = [
-  { id: 56,    name: "BSC",      native: "BNB", cg: "binancecoin",             explorer: "https://bscscan.com",               color: "--s1", on: true },
-  { id: 137,   name: "Polygon",  native: "POL", cg: "polygon-ecosystem-token", explorer: "https://polygonscan.com",           color: "--s2", on: true },
-  { id: 1,     name: "Ethereum", native: "ETH", cg: "ethereum",                explorer: "https://etherscan.io",              color: "--s3", on: false },
-  { id: 42161, name: "Arbitrum", native: "ETH", cg: "ethereum",                explorer: "https://arbiscan.io",               color: "--s4", on: false },
-  { id: 8453,  name: "Base",     native: "ETH", cg: "ethereum",                explorer: "https://basescan.org",              color: "--s5", on: false },
-  { id: 10,    name: "Optimism", native: "ETH", cg: "ethereum",                explorer: "https://optimistic.etherscan.io",   color: "--s8", on: false },
-  // Kaia, Plasma: chưa có nguồn API — chỉ hiển thị dữ liệu đã audit của Central Vault (1)
-  { id: 8217,  name: "Kaia",     native: "KAIA", cg: "kaia",                   explorer: "https://kaiascan.io",               color: "--s6", on: false, api: false },
-  { id: 9745,  name: "Plasma",   native: "XPL", cg: "plasma",                  explorer: "https://plasmascan.to",             color: "--s7", on: false, api: false },
-];
-const chainById = Object.fromEntries(CHAINS.map(c => [c.id, c]));
-// Chỉ tính USDT chuẩn — nhận diện theo ĐỊA CHỈ HỢP ĐỒNG, không theo tên (ví bị spam token giả tên "USDT").
-// Đã đối chiếu symbol() on-chain ngày 2026-10-19. Mọi token khác (kể cả BNB/POL native) không được tính.
-const VERIFIED = {
-  "56:0x55d398326f99059ff775485246999027b3197955": "USDT",   // Tether USD (BSC-USD) trên BNB Chain
-  "137:0xc2132d05d31c914a87c6611c10748aeb04b58e8f": "USDT0", // USDT0 trên Polygon PoS
-  "8217:0xd077a400968890eacc75cdc901f0356c943e4fdb": "USDT", // Tether USD trên Kaia (theo sổ đối soát)
-  "9745:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb": "USDT0", // USDT0 trên Plasma (theo sổ đối soát)
-};
 // BSC lấy qua NodeReal (URL trong config.local.js) vì Etherscan free không hỗ trợ BSC
 // URL chính + URL dự phòng (key NodeReal thứ hai, hoặc RPC khác hỗ trợ nr_getAssetTransfers) — đặt trong config.local.js, không commit
-// Không có config.local.js mà trang chạy qua http(s) (bản Vercel) → gọi proxy /api, key nằm trong biến môi trường phía server
+// Không có config.local.js mà trang chạy qua http(s) (bản Vercel) → server tải và lưu (api/sync), mọi trình duyệt đọc chung (api/txs)
 const PROXY = !window.ETHERSCAN_API_KEY && !window.NODEREAL_BSC_URL && /^https?:$/.test(location.protocol);
-const NODEREAL_BSC = PROXY ? ["/api/nodereal"] : [window.NODEREAL_BSC_URL, window.NODEREAL_BSC_URL_BACKUP].filter(Boolean);
-const ES_URL = PROXY ? "/api/etherscan?" : "https://api.etherscan.io/v2/api?";
+const api = Onchain.create({ esKey: window.ETHERSCAN_API_KEY || "", nrUrls: [window.NODEREAL_BSC_URL, window.NODEREAL_BSC_URL_BACKUP].filter(Boolean) });
 const isVerified = t => t.kind === "token" && !!VERIFIED[t.chain + ":" + t.contract];
 
 // Dữ liệu chuẩn đã audit của Central Vault (1) — cv1_audited.local.js, tạo bằng tools/build_cv1_audited.py.
@@ -457,67 +433,6 @@ function valueOf(t) {
 }
 
 // ---------- tải dữ liệu từ Etherscan V2 ----------
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-// Giới hạn tốc độ dùng chung cho các lượt tải chạy song song: tối đa n lệnh trong mỗi khoảng ms
-function rateGate(n, ms) {
-  const sent = []; let chain = Promise.resolve();
-  return () => chain = chain.then(async () => {
-    while (sent.length >= n) { const wait = sent[0] + ms - Date.now(); if (wait > 0) await sleep(wait); sent.shift(); }
-    sent.push(Date.now());
-  });
-}
-const esGate = rateGate(3, 1050); // Etherscan free: 3 lệnh/giây
-const nrGate = rateGate(7, 60000); // NodeReal free: ~8 lệnh/phút (đo ngày 2026-10-20), giữ dưới ngưỡng
-async function esCall(chainid, params, key) {
-  const qs = new URLSearchParams({ chainid, ...params, apikey: key });
-  for (let attempt = 0; attempt < 4; attempt++) {
-    await esGate();
-    const r = await fetch(ES_URL + qs);
-    const j = await r.json();
-    if (j.status === "1") return j.result;
-    if (j.message === "No transactions found" || (Array.isArray(j.result) && j.result.length === 0)) return [];
-    const msg = typeof j.result === "string" ? j.result : j.message;
-    if (/rate limit/i.test(msg)) { await sleep(1200); continue; }
-    throw new Error(msg);
-  }
-  throw new Error("Rate limit liên tục");
-}
-async function esAll(chainid, action, addr, key, start = 0) {
-  // Etherscan chỉ trả tối đa 10.000 bản ghi mỗi truy vấn (page × offset) → hết 10 trang thì
-  // tải tiếp từ block cuối cùng; bỏ các bản ghi của block cuối ở lượt trước để không trùng.
-  const out = []; const offset = 1000;
-  for (let round = 0; round < 50; round++) {
-    const batch = [];
-    for (let page = 1; page <= 10; page++) {
-      const res = await esCall(chainid, { module: "account", action, address: addr, startblock: start, endblock: 999999999, page, offset, sort: "asc" }, key);
-      batch.push(...res);
-      if (res.length < offset) { out.push(...batch); return out; }
-    }
-    const last = +batch[batch.length - 1].blockNumber;
-    const keep = batch.filter(x => +x.blockNumber < last);
-    if (!keep.length) throw new Error(`block ${last} có hơn 10.000 bản ghi, không tải hết được`);
-    out.push(...keep); start = last;
-  }
-  throw new Error("quá nhiều bản ghi (> 50 lượt × 10.000)");
-}
-function normalize(chainid, raw, kind, addr, vault) {
-  const me = addr.toLowerCase(), c = chainById[chainid];
-  return raw.flatMap(x => {
-    if (x.isError === "1") return [];
-    const from = (x.from || "").toLowerCase(), to = (x.to || "").toLowerCase();
-    const dir = from === me && to === me ? "self" : to === me ? "in" : from === me ? "out" : null;
-    if (!dir || dir === "self") return [];
-    let token, amount, contract = "";
-    if (kind === "token") {
-      const dec = +x.tokenDecimal || 0;
-      token = (x.tokenSymbol || "?").toUpperCase(); contract = x.contractAddress.toLowerCase();
-      amount = Number(x.value) / 10 ** dec;
-    } else { token = c.native; amount = Number(x.value) / 1e18; }
-    if (!(amount > 0)) return []; // bỏ transfer 0 (thường là address poisoning)
-    return [{ vault, chain: chainid, ts: +x.timeStamp, block: +x.blockNumber, hash: x.hash, from, to, dir, token, contract, amount, kind,
-              cp: dir === "in" ? from : to }];
-  });
-}
 function priceUSD(t) {
   return isVerified(t) ? t.amount : null; // USDT/USDT0 tính 1:1 USD
 }
@@ -544,11 +459,11 @@ function setBusy(on) {
   $("reload").disabled = on; $("reload").classList.toggle("spinning", on);
   scheduleRender();
 }
-addEventListener("beforeunload", e => { if (state.busy) e.preventDefault(); });
+addEventListener("beforeunload", e => { if (state.busy && !PROXY) e.preventDefault(); }); // bản Vercel: server vẫn đồng bộ tiếp khi đóng trang
 // Mặc định chỉ tải phần mới kể từ block cuối đã tải (cursor lưu theo vault + chain);
-// full = true hoặc chưa có cursor thì tải lại toàn bộ. Các vault + chain chạy song song, giới hạn tốc độ qua esGate/nrGate.
+// full = true hoặc chưa có cursor thì tải lại toàn bộ. Các vault + chain chạy song song, giới hạn tốc độ trong onchain.js.
 async function runFetch(full = false) {
-  const key = window.ETHERSCAN_API_KEY || (PROXY ? "proxy" : ""); // qua proxy thì server tự gắn key
+  if (PROXY) return runServerSync(full);
   const chains = CHAINS.filter(c => c.api !== false && $("ch_" + c.id).checked);
   if ($("btnFetch").disabled) return; // đang tải dở thì bỏ qua
   $("status").innerHTML = ""; setBusy(true);
@@ -556,7 +471,7 @@ async function runFetch(full = false) {
   try {
     const cursor = store.get("cursor", {});
     const prices = fetchPrices();
-    const balances = fetchBalances(key);
+    const balances = fetchBalances();
     const all = state.txs.filter(t => !chains.some(c => c.id === t.chain)); // giữ dữ liệu của chain không tải lại
     const failed = new Set();
     const jobs = VAULTS.flatMap(v => chains.map(c => ({ v, c, line: log(`${v.name} · ${c.name}: đang tải…`) })));
@@ -569,19 +484,10 @@ async function runFetch(full = false) {
       const floor = v.id === 1 && audCut[c.id] ? audCut[c.id].block + 1 : 0;
       const start = Math.max(inc ? cursor[ck] : 0, floor);
       try {
-        let rows, detail, scanned = 0;
-        if (c.id === 56) {
-          ({ rows, scanned } = await fetchNodeReal(v.addr, v.id, start, line));
-          detail = `trong đó ${rows.filter(isVerified).length} là USDT chuẩn`;
-        } else {
-          if (!key) throw new Error("cần Etherscan API key trong config.local.js (chạy ./set-key.sh)");
-          const [tok, nat, internal] = await Promise.all(["tokentx", "txlist", "txlistinternal"].map(a => esAll(c.id, a, v.addr, key, start)));
-          rows = [...normalize(c.id, tok, "token", v.addr, v.id), ...normalize(c.id, nat, "native", v.addr, v.id), ...normalize(c.id, internal, "internal", v.addr, v.id)];
-          detail = `token ${tok.length}, native ${nat.length}, internal ${internal.length} bản ghi gốc`;
-        }
+        const { rows, cursor: next, detail } = await api.fetchRange(v, c.id, start, msg => line.textContent += " · " + msg);
         // tải tiếp: giữ bản ghi trước block bắt đầu (và bản ghi CSV không có block), phần từ block bắt đầu thay bằng dữ liệu mới
         all.push(...(inc ? old.filter(t => !(t.block >= start)) : []), ...rows);
-        cursor[ck] = rows.reduce((m, t) => Math.max(m, t.block), Math.max(start, scanned));
+        cursor[ck] = next;
         line.textContent = inc ? `${tag}: ${rows.length} transfer từ block ${start} (${detail})` : `${tag}: ${rows.length} transfer (${detail})`;
       } catch (e) {
         all.push(...old); // tải lỗi thì giữ dữ liệu cũ của vault + chain này
@@ -598,28 +504,13 @@ async function runFetch(full = false) {
     log(`Xong sau ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   } finally { setBusy(false); }
 }
-// Số dư USDT chuẩn on-chain (balanceOf) — chỉ BSC và Polygon; Kaia/Plasma chưa có nguồn API.
-// decimals đã đối chiếu on-chain ngày 2026-10-20: BSC-USD 18, Polygon USDT0 6.
-const BAL_CHAINS = [{ id: 56, dec: 18 }, { id: 137, dec: 6 }];
-const contractOf = id => Object.keys(VERIFIED).find(k => k.startsWith(id + ":")).split(":")[1];
-const fromUnits = (raw, dec) => { const b = BigInt(raw), d = 10n ** BigInt(dec); return Number(b / d) + Number(b % d) / Number(d); };
-async function fetchBalance(v, c, key, line) {
-  const contract = contractOf(c.id);
-  if (c.id === 56) {
-    if (!NODEREAL_BSC.length) throw new Error("cần NodeReal URL trong config.local.js");
-    const j = await nrCall("eth_call", [{ to: contract, data: "0x70a08231" + v.addr.slice(2).toLowerCase().padStart(64, "0") }, "latest"], line);
-    return fromUnits(j.result, c.dec);
-  }
-  if (!key) throw new Error("cần Etherscan API key trong config.local.js");
-  return fromUnits(await esCall(c.id, { module: "account", action: "tokenbalance", contractaddress: contract, address: v.addr, tag: "latest" }, key), c.dec);
-}
 // Lỗi một vault · chain thì giữ số cũ, gắn cờ lỗi
-async function fetchBalances(key) {
+async function fetchBalances() {
   const bal = { ...state.balances };
   await Promise.all(VAULTS.flatMap(v => BAL_CHAINS.map(async c => {
     const k = v.id + ":" + c.id, tag = `Số dư ${v.short} · ${chainById[c.id].name}`, line = log(`${tag}: đang tải…`);
     try {
-      bal[k] = { v: await fetchBalance(v, c, key, line), at: Date.now() };
+      bal[k] = { v: await api.fetchBalance(v, c.id, msg => line.textContent += " · " + msg), at: Date.now() };
       line.textContent = `${tag}: ${fmtNum(bal[k].v, "USD")}`;
     } catch (e) {
       bal[k] = { ...bal[k], err: true };
@@ -628,76 +519,43 @@ async function fetchBalances(key) {
   })));
   state.balances = bal; store.set("balances", bal);
 }
-// Gọi NodeReal: lỗi giới hạn tốc độ/mạng thì chuyển sang URL dự phòng, hết URL thì chờ tăng dần rồi thử lại
-async function nrCall(method, params, line) {
-  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
-  let lastErr;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt) {
-      const wait = 15000 * attempt; // 15s, 30s, 45s — giới hạn của NodeReal tính theo phút
-      line.textContent += ` · NodeReal giới hạn tốc độ, thử lại sau ${wait / 1000}s…`;
-      await sleep(wait);
-    }
-    for (const url of NODEREAL_BSC) {
-      try {
-        await nrGate();
-        const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body });
-        const j = await r.json().catch(() => ({ error: { message: `HTTP ${r.status}` } }));
-        if (!j.error) return j;
-        lastErr = new Error(j.error.message);
-        if (!/limit|rate|too many|quota|exceed|HTTP 429|HTTP 5/i.test(j.error.message)) throw lastErr; // lỗi khác: không thử lại
-      } catch (e) {
-        if (e === lastErr) throw e;
-        lastErr = e; // lỗi mạng: thử URL tiếp theo
-      }
-    }
+
+// ---------- bản Vercel: dữ liệu dùng chung ở server ----------
+// Server tải tăng dần theo cursor rồi lưu vào Vercel Blob (api/sync); mọi trình duyệt đọc cùng một bộ (api/txs).
+// IndexedDB chỉ còn là cache để mở trang hiện ngay số lần trước trong lúc chờ server.
+const STALE_MS = 15 * 60e3; // dữ liệu server cũ hơn mức này thì khi mở trang tự yêu cầu server đồng bộ
+async function loadServer() {
+  const r = await fetch("/api/txs", { cache: "no-store" });
+  const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+  if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+  state.balances = d.balances || {}; store.set("balances", state.balances);
+  for (const [ck, j] of Object.entries(d.jobs || {})) {
+    if (j.err) log(`Lần đồng bộ gần nhất lỗi ở ${vaultById[ck.split(":")[0]]?.name} · ${chainById[ck.split(":")[1]]?.name}: ${j.err}`, true);
   }
-  throw lastErr;
+  setData(d.txs, d.syncedAt);
+  return d;
 }
-let nrHead = null; // block mới nhất của BSC: { at, p: Promise }
-// Trả về { rows, scanned }: scanned là block đã quét tới, dùng làm cursor (vault ít giao dịch thì cursor vẫn tiến lên)
-async function fetchNodeReal(addr, vault, fromBlock, line) {
-  if (!NODEREAL_BSC.length) throw new Error("cần NodeReal URL trong config.local.js (chạy ./set-key.sh)");
-  if (!nrHead || Date.now() - nrHead.at > 10000) nrHead = { at: Date.now(), p: nrCall("eth_blockNumber", [], line) }; // các vault dùng chung
-  const latest = parseInt((await nrHead.p.catch(e => { nrHead = null; throw e; })).result, 16);
-  // index của NodeReal có thể chậm hơn eth_blockNumber ("blockNum not reached") → lùi toBlock, lỗi thì lùi thêm
-  for (const lag of [50, 500]) {
-    const scanned = latest - lag;
-    // lọc theo block thì NodeReal bắt buộc có cả toBlock, và khoảng phải < 2.000.000 block;
-    // khoảng dài hơn thì tải không lọc rồi bỏ bản ghi trước fromBlock (ít lệnh hơn chia nhiều khoảng)
-    const range = scanned - fromBlock < 1999999 ? [Math.min(fromBlock, scanned - 1), scanned] : null;
-    try { return { rows: await nrScan(addr, vault, fromBlock, range, line), scanned: range ? scanned : latest - 500 }; }
-    catch (e) { if (!range || lag === 500 || !/not reached/i.test(e.message)) throw e; }
-  }
-}
-async function nrScan(addr, vault, fromBlock, range, line) {
-  const me = addr.toLowerCase(), out = [];
-  await Promise.all(["toAddress", "fromAddress"].map(async side => {
-    let pageKey = "";
-    for (let i = 0; i < 20; i++) {
-      const q = { category: ["external", "internal", "20"], [side]: addr, order: "asc", excludeZeroValue: true, maxCount: "0x3e8" };
-      if (range) { q.fromBlock = "0x" + range[0].toString(16); q.toBlock = "0x" + range[1].toString(16); }
-      if (pageKey) q.pageKey = pageKey;
-      const j = await nrCall("nr_getAssetTransfers", [q], line);
-      for (const x of j.result.transfers) {
-        if (x.receiptsStatus !== 1) continue;
-        const block = parseInt(x.blockNum, 16);
-        if (block < fromBlock) continue;
-        const from = x.from.toLowerCase(), to = (x.to || "").toLowerCase();
-        const dir = to === me && from !== me ? "in" : from === me && to !== me ? "out" : null;
-        if (!dir) continue;
-        const isTok = x.category === "20";
-        const amount = Number(BigInt(x.value)) / 10 ** (isTok ? +x.decimal || 0 : 18);
-        if (!(amount > 0)) continue;
-        out.push({ vault, chain: 56, ts: x.blockTimeStamp, block, hash: x.hash, from, to, dir,
-                   token: isTok ? (x.asset || "?") : "BNB", contract: isTok ? x.contractAddress.toLowerCase() : "",
-                   amount, kind: isTok ? "token" : x.category === "internal" ? "internal" : "native", cp: dir === "in" ? from : to });
-      }
-      pageKey = j.result.pageKey;
-      if (!pageKey) break;
+async function runServerSync(full = false) {
+  if (state.busy) return;
+  $("status").innerHTML = ""; setBusy(true);
+  const line = log("Đang đồng bộ dữ liệu on-chain ở server — lần này cập nhật cho mọi người xem…");
+  try {
+    fetchPrices();
+    const r = await fetch("/api/sync" + (full ? "?full=1" : ""), { method: "POST" });
+    const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+    if (j.error) throw new Error(j.error);
+    if (j.busy) throw new Error("lượt đồng bộ khác chạy quá lâu, thử lại sau");
+    line.textContent = `Server đồng bộ xong sau ${(j.ms / 1000).toFixed(1)}s` + (j.waited ? " (đã chờ một lượt đồng bộ khác chạy xong)" : "");
+    for (const x of j.jobs || []) {
+      const tag = x.tag + (x.ck.endsWith(":56") ? " (NodeReal)" : "");
+      if (x.err) log(`${tag}: lỗi — ${x.err}` + (x.total ? ` (giữ ${x.total} transfer đã tải trước đó)` : ""), true);
+      else log(x.inc ? `${tag}: ${x.n} transfer từ block ${x.start} (${x.detail})` : `${tag}: ${x.n} transfer (${x.detail})`);
     }
-  }));
-  return out;
+  } catch (e) {
+    line.className = "err"; line.textContent = `Đồng bộ ở server lỗi — ${e.message}. Đang hiện dữ liệu đã lưu gần nhất.`;
+  }
+  try { await loadServer(); } catch (e) { log(`Không đọc được dữ liệu từ server — ${e.message}`, true); }
+  finally { setBusy(false); }
 }
 // gán vault cho bản ghi chưa có (dữ liệu lưu trước khi có nhiều vault) theo from/to; bỏ bản ghi không thuộc vault nào
 function assignVault(txs) {
@@ -1130,6 +988,13 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", scheduleRe
   state.txs.forEach(t => { t.usd = priceUSD(t); }); // áp quy tắc định giá hiện hành cho dữ liệu đã lưu
   state.txs = withAudited(state.txs);
   render();
+  if (PROXY) {
+    // bản Vercel: lấy bộ dữ liệu dùng chung; server chưa có hoặc đã cũ thì yêu cầu server đồng bộ (cập nhật cho mọi người)
+    let d = null;
+    try { d = await loadServer(); } catch (e) { log(`Không đọc được dữ liệu từ server — ${e.message}`, true); }
+    if (d && !(Date.now() - d.syncedAt < STALE_MS)) runServerSync();
+    return;
+  }
   // Tự tải khi có vault chưa từng tải trong trình duyệt này; BSC dùng NodeReal URL, Polygon dùng Etherscan key — cả hai trong config.local.js
   const fetched = store.get("vaultsFetched", []);
   // dòng audit không tính: CV1 chỉ có sổ audit mà chưa có dữ liệu API sau mốc cắt thì vẫn phải tải

@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/sync.js": { "maxDuration": 300, "includeFiles": "cv1_audited.local.js" }
+  },
+  "crons": [
+    { "path": "/api/sync", "schedule": "0 23 * * *" }
+  ]
+}
